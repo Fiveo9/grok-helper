@@ -1,0 +1,84 @@
+name: Manual Docker Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_name:
+        description: Docker image name
+        required: true
+        default: grok-helper
+      image_tag:
+        description: Docker image tag
+        required: true
+        default: latest
+      push_to_ghcr:
+        description: Push image to GitHub Container Registry
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set image variables
+        id: vars
+        shell: bash
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          image_name="$(echo '${{ inputs.image_name }}' | tr '[:upper:]' '[:lower:]')"
+          tag="${{ inputs.image_tag }}"
+          image_ref="ghcr.io/${owner}/${image_name}:${tag}"
+
+          echo "image-ref=${image_ref}" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=${image_name}-${tag}-docker-image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: ${{ inputs.push_to_ghcr == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ steps.vars.outputs.image-ref }}
+          load: true
+
+      - name: Push image to GHCR
+        if: ${{ inputs.push_to_ghcr == 'true' }}
+        shell: bash
+        run: docker push "${{ steps.vars.outputs.image-ref }}"
+
+      - name: Save Docker image
+        shell: bash
+        run: |
+          mkdir -p dist
+          docker save "${{ steps.vars.outputs.image-ref }}" -o "dist/${{ steps.vars.outputs.artifact-name }}.tar"
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.vars.outputs.artifact-name }}
+          path: dist/*.tar
+          if-no-files-found: error
+          retention-days: 7
