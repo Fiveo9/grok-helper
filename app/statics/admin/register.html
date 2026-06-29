@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fiveonine - 注册控制台</title>
+  <link rel="icon" href="/favicon.ico?v={{APP_VERSION}}">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="/static/css/app.css?v={{APP_VERSION}}" rel="stylesheet">
+  <style>
+    body { background:#FAF9F5 }
+    .page-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px }
+    .page-title { font-size:22px; font-weight:700; line-height:1.2 }
+    .page-sub { font-size:13px; color:var(--fg-muted); margin-top:5px }
+    .page-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:28px 0 14px }
+    .section-title { font-size:13px; font-weight:600; color:#222; letter-spacing:.01em }
+    .section-meta { font-size:12px; color:#9a9a9a }
+    .register-grid { display:grid; grid-template-columns:minmax(0, 1.15fr) minmax(320px, .85fr); gap:18px; align-items:start }
+    .register-panel { background:#fff; border-radius:12px; padding:18px; min-width:0 }
+    .register-panel-title { font-size:14px; font-weight:650; color:#222; margin-bottom:14px }
+    .form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px }
+    .form-field { display:flex; flex-direction:column; gap:6px; min-width:0 }
+    .form-field.wide { grid-column:1 / -1 }
+    .form-field label { font-size:12px; font-weight:600; color:#696969 }
+    .form-field input, .form-field textarea, .form-field select { width:100%; min-height:36px; border:1px solid #e6e6e6; border-radius:8px; background:#fafafa; color:#333; padding:8px 10px; font:inherit; font-size:13px; outline:none }
+    .form-field textarea { min-height:74px; resize:vertical }
+    .form-field input:focus, .form-field textarea:focus, .form-field select:focus { border-color:#b8b8b8; background:#fff }
+    .check-row { display:flex; align-items:center; gap:8px; min-height:36px; color:#555; font-size:13px }
+    .check-row input { width:14px; height:14px; accent-color:#111 }
+    .page-action-btn { height:32px; padding:0 14px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:13px; font-weight:600; border:1px solid #e6e6e6; background:#fafafa; color:#444 }
+    .page-action-btn:hover { background:#f3f3f3; border-color:#dcdcdc }
+    .page-action-btn-primary { background:#111; border-color:#111; color:#fff }
+    .page-action-btn-primary:hover { background:#222; border-color:#222 }
+    .page-action-btn-danger { color:#9f1239 }
+    .page-action-btn:disabled { opacity:.45; pointer-events:none }
+    .health-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px }
+    .health-card { min-height:112px; background:#fff; border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:9px }
+    .health-top { display:flex; align-items:center; justify-content:space-between; gap:10px }
+    .health-label { font-size:12px; font-weight:650; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .health-pill { min-width:46px; height:22px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:650; background:#f4f4f5; color:#71717a }
+    .health-pill.ok { background:#ecfdf3; color:#16703a }
+    .health-pill.bad { background:#fff1f2; color:#be123c }
+    .health-summary { font-size:13px; color:#444; line-height:1.4 }
+    .health-detail { margin-top:auto; color:#9a9a9a; font-size:11px; line-height:1.45; word-break:break-word }
+    .table-card { background:#fff; border-radius:12px; overflow:auto }
+    table { width:100%; border-collapse:collapse }
+    th { background:#fff; font-size:11px; font-weight:500; color:#9b9b9b; padding:11px 14px; text-align:left; letter-spacing:.01em; white-space:nowrap }
+    td { font-size:13px; padding:13px 14px; color:#3f3f3f; vertical-align:middle; white-space:nowrap }
+    tr:hover td { background:#fdfdfd }
+    .table-empty { text-align:center; color:#bbb; padding:34px 16px }
+    .status-badge { height:22px; padding:0 8px; border-radius:999px; display:inline-flex; align-items:center; font-size:11px; font-weight:650; background:#f4f4f5; color:#71717a }
+    .status-running { background:#eff6ff; color:#1d4ed8 }
+    .status-completed { background:#ecfdf3; color:#16703a }
+    .status-failed { background:#fff1f2; color:#be123c }
+    .status-stopped, .status-partial { background:#fff7ed; color:#c2410c }
+    .task-name { font-weight:650; color:#222 }
+    .task-sub { margin-top:4px; font-size:11px; color:#999 }
+    .task-actions { display:flex; align-items:center; gap:8px; justify-content:flex-end }
+    .link-btn { color:#555; font:inherit; font-size:12px; font-weight:600 }
+    .link-btn:hover { color:#111 }
+    .link-btn.danger { color:#9f1239 }
+    .detail-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px }
+    .detail-item { min-width:0; padding:10px 0; border-bottom:1px solid #f1f1f1 }
+    .detail-label { font-size:11px; color:#999; margin-bottom:5px }
+    .detail-value { font-size:13px; color:#333; word-break:break-word }
+    .logs-box { min-height:260px; max-height:520px; overflow:auto; background:#171717; color:#e5e7eb; border-radius:10px; padding:12px; font:12px/1.55 'Geist Mono','Courier New',monospace; white-space:pre-wrap }
+    .muted { color:#999 }
+    .notice { min-height:18px; margin-top:10px; color:#777; font-size:12px }
+    @media (max-width: 980px) {
+      .register-grid, .health-grid { grid-template-columns:1fr }
+      .page-hd { flex-direction:column }
+    }
+    @media (max-width: 640px) {
+      .form-grid, .detail-grid { grid-template-columns:1fr }
+      .register-panel { padding:15px }
+      td, th { padding:11px 10px }
+    }
+    .pagination-wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px; padding:10px 14px }
+    .pagination-left, .pagination-right { display:flex; align-items:center; gap:6px }
+    .page-size-select { height:30px; padding:0 8px; border:1px solid #e6e6e6; border-radius:6px; background:#fafafa; font-size:12px; color:#555; outline:none }
+    .page-size-select:focus { border-color:#b8b8b8; background:#fff }
+    .page-btn { min-width:28px; height:28px; padding:0 6px; border:1px solid #e6e6e6; border-radius:6px; background:#fafafa; color:#555; font-size:12px; font-weight:500; cursor:pointer }
+    .page-btn:hover { background:#f3f3f3; border-color:#dcdcdc }
+    .page-btn.active { background:#111; border-color:#111; color:#fff }
+    .page-btn:disabled { opacity:.35; pointer-events:none }
+  </style>
+</head>
+<body>
+<div id="admin-header" data-active="/admin/register"></div>
+
+<main class="admin-main" style="padding-bottom:70px">
+  <div class="page-hd">
+    <div>
+      <div class="page-title">Grok2API注册控制台</div>
+      <div class="page-sub">管理注册运行配置、连通性检查和批量注册任务。</div>
+    </div>
+    <div class="page-actions">
+      <button type="button" class="page-action-btn" id="register-refresh-health">检查健康</button>
+      <button type="button" class="page-action-btn page-action-btn-primary" id="register-refresh-tasks">刷新任务</button>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <div class="section-title">健康检查</div>
+    <div class="section-meta" id="register-health-checked">未检查</div>
+  </div>
+  <div class="health-grid" id="register-health-grid"></div>
+
+  <div class="section-head">
+    <div class="section-title">任务配置</div>
+  </div>
+  <div class="register-grid">
+    <section class="register-panel" aria-labelledby="register-settings-title">
+      <div class="register-panel-title" id="register-settings-title">默认设置</div>
+      <form id="register-settings-form" class="form-grid"></form>
+      <div class="notice" id="register-settings-notice"></div>
+    </section>
+    <section class="register-panel" aria-labelledby="register-create-title">
+      <div class="register-panel-title" id="register-create-title">创建任务</div>
+      <form id="register-create-form" class="form-grid"></form>
+      <div class="notice" id="register-create-notice"></div>
+    </section>
+  </div>
+
+  <div class="section-head">
+    <div class="section-title">任务列表</div>
+    <div class="section-meta" id="register-task-count">0 个任务</div>
+  </div>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>任务</th>
+          <th>状态</th>
+          <th>进度</th>
+          <th>最近邮箱</th>
+          <th>时间</th>
+          <th style="text-align:right">操作</th>
+        </tr>
+      </thead>
+      <tbody id="register-task-list"></tbody>
+    </table>
+  </div>
+
+  <div class="section-head">
+    <div class="section-title">任务详情</div>
+    <div class="section-meta" id="register-detail-title">未选择任务</div>
+  </div>
+  <div class="register-grid">
+    <section class="register-panel">
+      <div class="register-panel-title">概要</div>
+      <div class="detail-grid" id="register-task-detail"></div>
+    </section>
+    <section class="register-panel">
+      <div class="register-panel-title">日志</div>
+      <pre class="logs-box" id="register-task-logs">选择任务后显示日志。</pre>
+    </section>
+  </div>
+</main>
+
+<script src="/static/js/i18n.js?v={{APP_VERSION}}"></script>
+<script src="/static/js/auth.js?v={{APP_VERSION}}"></script>
+<script src="/static/js/admin-header.js?v={{APP_VERSION}}"></script>
+<script src="/static/js/footer.js?v={{APP_VERSION}}"></script>
+<script src="/static/js/admin-register.js?v={{APP_VERSION}}"></script>
+<script>
+(async () => {
+  await new Promise((resolve) => window.I18n?.onReady ? I18n.onReady(resolve) : resolve());
+  await renderAdminHeader?.();
+  await renderSiteFooter?.();
+  // 跳过认证检查，直接初始化
+  window.initRegisterConsole('');
+})();
+</script>
+</body>
+</html>
