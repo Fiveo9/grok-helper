@@ -25,7 +25,7 @@ cd grok-helper
 
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填写必要的配置
+# 编辑 .env 文件，至少修改 GROK_HELPER_ADMIN_PASSWORD 和必要的注册配置
 ```
 
 ### 3. 启动服务
@@ -48,12 +48,34 @@ http://localhost:8001/admin/register
 http://localhost:8000/admin/register
 ```
 
+浏览器会弹出 HTTP Basic 认证框，默认用户名为 `.env` 里的 `GROK_HELPER_ADMIN_USERNAME`，密码为 `GROK_HELPER_ADMIN_PASSWORD`。
+
+## GitHub 手动构建
+
+项目内置了手动触发的 GitHub Actions workflow，可在 GitHub 页面构建 Docker 镜像：
+
+1. 打开仓库的 `Actions` 页面。
+2. 选择 `Manual Docker Build`。
+3. 点击 `Run workflow`。
+4. 按需填写：
+   - `image_name`: 镜像名称，默认 `grok-helper`
+   - `image_tag`: 镜像标签，默认 `latest`
+   - `push_to_ghcr`: 填 `true` 或 `yes` 时推送到 GitHub Container Registry
+5. 构建完成后，在 workflow run 的 `Artifacts` 区域下载 Docker 镜像 `.tar` 文件。
+
+下载后可在本地导入：
+
+```bash
+docker load -i grok-helper-latest-docker-image.tar
+```
+
 ## 配置说明
 
 ### 必填配置
 
 | 变量 | 说明 |
 |------|------|
+| `GROK_HELPER_ADMIN_PASSWORD` | 管理控制台 HTTP Basic 密码 |
 | `GROK_REGISTER_DEFAULT_TEMP_MAIL_API_BASE` | 临时邮箱 API 地址 |
 | `GROK_REGISTER_DEFAULT_TEMP_MAIL_ADMIN_EMAIL` | 邮箱管理员账号 |
 | `GROK_REGISTER_DEFAULT_TEMP_MAIL_ADMIN_PASSWORD` | 邮箱管理员密码 |
@@ -65,6 +87,7 @@ http://localhost:8000/admin/register
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
+| `GROK_HELPER_ADMIN_USERNAME` | 管理控制台 HTTP Basic 用户名 | admin |
 | `GROK_REGISTER_DEFAULT_RUN_COUNT` | 每次任务注册数量 | 50 |
 | `GROK_REGISTER_DEFAULT_PROXY` | API 请求代理 | 空 |
 | `GROK_REGISTER_DEFAULT_BROWSER_PROXY` | 浏览器代理 | 空 |
@@ -103,6 +126,8 @@ grok-helper/
 | `GET` | `/admin/register/tasks/{id}/logs` | 获取任务日志 |
 | `POST` | `/admin/register/tasks/{id}/stop` | 停止任务 |
 | `DELETE` | `/admin/register/tasks/{id}` | 删除任务 |
+
+除 `/health` 外，`/admin/register` 页面和 `/admin/register/*` API 都需要 HTTP Basic 认证。
 
 ## 技术栈
 

@@ -26,7 +26,9 @@ def setup_logging(
 ) -> None:
     del max_files
     resolved_level = getattr(logging, level.upper(), logging.INFO)
-    logger.handlers.clear()
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+        handler.close()
     logger.setLevel(resolved_level)
     logger.propagate = False
 

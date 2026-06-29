@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 # 先加载 .env，再导入注册模块；注册模块会在导入期读取路径和并发配置。
 load_dotenv()
 
+from grok_helper.auth import require_admin
 from grok_helper.logger import logger, setup_logging
 from grok_helper.register import router as register_router
 from grok_helper.register import start_register_supervisor, stop_register_supervisor
@@ -47,7 +48,7 @@ def create_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(_statics_dir)), name="static")
 
     # 管理页面路由
-    @app.get("/admin/register", response_class=HTMLResponse)
+    @app.get("/admin/register", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
     async def admin_register_page():
         html_file = _statics_dir / "admin" / "register.html"
         if html_file.exists():

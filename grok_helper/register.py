@@ -17,9 +17,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from grok_helper.auth import require_admin
 from grok_helper.logger import logger
 from grok_helper.paths import data_path, project_root
 
@@ -947,7 +948,7 @@ def stop_register_supervisor() -> None:
     supervisor.stop()
 
 
-router = APIRouter(prefix="/admin/register", tags=["Register Admin"])
+router = APIRouter(prefix="/admin/register", tags=["Register Admin"], dependencies=[Depends(require_admin)])
 
 
 def _mask_settings(data: dict[str, Any]) -> dict[str, Any]:
