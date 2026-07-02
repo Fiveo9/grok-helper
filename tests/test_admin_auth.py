@@ -42,6 +42,7 @@ class AdminAuthTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("www-authenticate", response.headers)
         self.assertIn("Grok2API", response.text)
+        self.assertIn('class="admin-auth-pending"', response.text)
 
     def test_register_page_accepts_valid_basic_auth(self) -> None:
         response = self.client.get(
@@ -56,10 +57,50 @@ class AdminAuthTest(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertIn("Basic", response.headers.get("www-authenticate", ""))
 
+    def test_admin_verify_rejects_invalid_credentials_without_basic_challenge(self) -> None:
+        response = self.client.get(
+            "/admin/register/auth/verify",
+            headers={"Authorization": self._basic_auth("admin", "wrong-secret")},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("www-authenticate", response.headers)
+        self.assertEqual(response.json(), {"authenticated": False})
+
+    def test_admin_verify_accepts_valid_credentials(self) -> None:
+        response = self.client.get(
+            "/admin/register/auth/verify",
+            headers={"Authorization": self._basic_auth("admin", "test-secret")},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"authenticated": True})
+
     def test_admin_login_page_exists(self) -> None:
-        response = self.client.get("/admin/login")
+        response = self.client.get("/admin/register/login")
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="admin-login-form"', response.text)
+        self.assertIn('/admin/register/static/css/app.css', response.text)
+        self.assertIn('/admin/register/static/js/auth.js', response.text)
+        self.assertNotIn('/admin/login', response.text)
+
+    def test_legacy_admin_login_redirects_to_register_login(self) -> None:
+        response = self.client.get("/admin/login", follow_redirects=False)
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers.get("location"), "/admin/register/login")
+
+    def test_register_page_uses_register_scoped_assets_and_login(self) -> None:
+        response = self.client.get("/admin/register")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('/admin/register/static/css/app.css', response.text)
+        self.assertIn('/admin/register/static/js/admin-register.js', response.text)
+        self.assertIn('/admin/register/login?next=', response.text)
+        self.assertNotIn('href="/static/', response.text)
+        self.assertNotIn('src="/static/', response.text)
+        self.assertNotIn('/admin/login', response.text)
+
+    def test_register_scoped_static_assets_are_served(self) -> None:
+        response = self.client.get("/admin/register/static/js/auth.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/admin/register/auth/verify", response.text)
 
     def test_health_remains_public(self) -> None:
         response = self.client.get("/health")

@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Fiveonine - 注册控制台</title>
-  <link rel="icon" href="/favicon.ico?v={{APP_VERSION}}">
+  <link rel="icon" href="/admin/register/static/favicon.ico?v={{APP_VERSION}}">
   <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
-  <link href="/static/css/app.css?v={{APP_VERSION}}" rel="stylesheet">
+  <link href="/admin/register/static/css/app.css?v={{APP_VERSION}}" rel="stylesheet">
   <style>
     body { background:#FAF9F5 }
     .page-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px }
@@ -84,9 +84,12 @@
     .page-btn:hover { background:#f3f3f3; border-color:#dcdcdc }
     .page-btn.active { background:#111; border-color:#111; color:#fff }
     .page-btn:disabled { opacity:.35; pointer-events:none }
+    .admin-auth-pending #admin-header,
+    .admin-auth-pending .admin-main,
+    .admin-auth-pending .site-footer { visibility:hidden }
   </style>
 </head>
-<body>
+<body class="admin-auth-pending">
 <div id="admin-header" data-active="/admin/register"></div>
 
 <main class="admin-main" style="padding-bottom:70px">
@@ -159,19 +162,16 @@
   </div>
 </main>
 
-<script src="/static/js/i18n.js?v={{APP_VERSION}}"></script>
-<script src="/static/js/auth.js?v={{APP_VERSION}}"></script>
-<script src="/static/js/admin-header.js?v={{APP_VERSION}}"></script>
-<script src="/static/js/footer.js?v={{APP_VERSION}}"></script>
-<script src="/static/js/admin-register.js?v={{APP_VERSION}}"></script>
+<script src="/admin/register/static/js/i18n.js?v={{APP_VERSION}}"></script>
+<script src="/admin/register/static/js/auth.js?v={{APP_VERSION}}"></script>
+<script src="/admin/register/static/js/admin-header.js?v={{APP_VERSION}}"></script>
+<script src="/admin/register/static/js/footer.js?v={{APP_VERSION}}"></script>
+<script src="/admin/register/static/js/admin-register.js?v={{APP_VERSION}}"></script>
 <script>
 (async () => {
-  await new Promise((resolve) => window.I18n?.onReady ? I18n.onReady(resolve) : resolve());
-  await renderAdminHeader?.();
-  await renderSiteFooter?.();
   const redirectToLogin = () => {
     const next = encodeURIComponent(location.pathname + location.search);
-    location.href = `/admin/login?next=${next}`;
+    location.href = `/admin/register/login?next=${next}`;
   };
   try {
     const stored = await adminKey.get();
@@ -180,6 +180,10 @@
       redirectToLogin();
       return;
     }
+    await new Promise((resolve) => window.I18n?.onReady ? I18n.onReady(resolve) : resolve());
+    await renderAdminHeader?.();
+    await renderSiteFooter?.();
+    document.body.classList.remove('admin-auth-pending');
     window.initRegisterConsole(stored);
   } catch {
     redirectToLogin();

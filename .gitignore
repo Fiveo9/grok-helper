@@ -56,3 +56,5 @@ htmlcov/
 .ace-tool/
 .worktrees/
 .superpowers/
+
+.tmp-*/

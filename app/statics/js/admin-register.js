@@ -70,7 +70,7 @@
       if (response.status === 401) {
         adminKey.clear();
         const next = encodeURIComponent(location.pathname + location.search);
-        location.href = `/admin/login?next=${next}`;
+        location.href = `/admin/register/login?next=${next}`;
       }
       const detail = data?.detail || data?.message || `HTTP ${response.status}`;
       throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));

@@ -53,8 +53,20 @@
     return out;
   }
 
+  function staticBase(){
+    try {
+      var script=document.querySelector('script[src*="/static/js/i18n.js"]');
+      if(!script) return '/static';
+      var path=new URL(script.src, window.location.href).pathname;
+      var marker='/js/i18n.js';
+      return path.slice(-marker.length)===marker ? path.slice(0, -marker.length) : '/static';
+    } catch(e) {
+      return '/static';
+    }
+  }
+
   function fetchLang(l){
-    return fetch('/static/i18n/'+l+'.json', {cache:'no-store'}).then(function(r){return r.ok?r.json():{};}).catch(function(){return {};});
+    return fetch(staticBase()+'/i18n/'+l+'.json', {cache:'no-store'}).then(function(r){return r.ok?r.json():{};}).catch(function(){return {};});
   }
 
   function t(k,p){

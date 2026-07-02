@@ -18,6 +18,20 @@ def _admin_password() -> str:
     return os.getenv("GROK_HELPER_ADMIN_PASSWORD", "").strip()
 
 
+def admin_password_configured() -> bool:
+    return bool(_admin_password())
+
+
+def verify_admin_credentials(credentials: HTTPBasicCredentials | None) -> bool:
+    expected_password = _admin_password()
+    if not expected_password or credentials is None:
+        return False
+
+    username_ok = secrets.compare_digest(credentials.username, _admin_username())
+    password_ok = secrets.compare_digest(credentials.password, expected_password)
+    return username_ok and password_ok
+
+
 def require_admin(credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
     expected_password = _admin_password()
     if not expected_password:
@@ -33,9 +47,7 @@ def require_admin(credentials: HTTPBasicCredentials | None = Depends(security)) 
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    username_ok = secrets.compare_digest(credentials.username, _admin_username())
-    password_ok = secrets.compare_digest(credentials.password, expected_password)
-    if not (username_ok and password_ok):
+    if not verify_admin_credentials(credentials):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",

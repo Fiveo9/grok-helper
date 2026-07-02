@@ -10,6 +10,17 @@ window.renderAdminHeader = async function renderAdminHeader() {
       return 'v1';
     }
   })();
+  const staticBase = (() => {
+    try {
+      const script = document.querySelector('script[src*="/static/js/admin-header.js"]');
+      if (!script) return '/static';
+      const path = new URL(script.src, window.location.href).pathname;
+      const marker = '/js/admin-header.js';
+      return path.endsWith(marker) ? path.slice(0, -marker.length) : '/static';
+    } catch {
+      return '/static';
+    }
+  })();
   const HEADER_HTML_CACHE_KEY = `grok2api.admin_header_html.${scriptVersion}`;
   const META_VERSION_CACHE_KEY = `grok2api.meta_version.${scriptVersion}`;
   let appVersion = '';
@@ -542,7 +553,7 @@ window.renderAdminHeader = async function renderAdminHeader() {
     if (cachedHtml) {
       mount.innerHTML = cachedHtml;
     } else {
-      const res = await fetch('/static/admin/header.html');
+      const res = await fetch(`${staticBase}/admin/header.html`);
       if (!res.ok) throw new Error('header unavailable');
       const html = await res.text();
       mount.innerHTML = html;

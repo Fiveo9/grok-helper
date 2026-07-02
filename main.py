@@ -6,14 +6,15 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 # 先加载 .env，再导入注册模块；注册模块会在导入期读取路径和并发配置。
 load_dotenv()
 
-from grok_helper.auth import require_admin
+from grok_helper.auth import admin_password_configured, require_admin, security, verify_admin_credentials
 from grok_helper.logger import logger, setup_logging
 from grok_helper.register import router as register_router
 from grok_helper.register import start_register_supervisor, stop_register_supervisor
@@ -42,10 +43,25 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/admin/register/auth/verify")
+    def admin_auth_verify(credentials: HTTPBasicCredentials | None = Depends(security)):
+        if not admin_password_configured():
+            return JSONResponse(
+                content={"authenticated": False},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if not verify_admin_credentials(credentials):
+            return JSONResponse(
+                content={"authenticated": False},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+        return {"authenticated": True}
+
     # 静态文件服务
     _statics_dir = Path(__file__).resolve().parent / "app" / "statics"
     if _statics_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(_statics_dir)), name="static")
+        app.mount("/admin/register/static", StaticFiles(directory=str(_statics_dir)), name="register-static")
 
     # 管理页面路由
     @app.get("/admin/register", response_class=HTMLResponse)
@@ -55,12 +71,16 @@ def create_app() -> FastAPI:
             return HTMLResponse(content=html_file.read_text(encoding="utf-8"))
         return HTMLResponse(content="<h1>Admin page not found</h1>", status_code=404)
 
-    @app.get("/admin/login", response_class=HTMLResponse)
+    @app.get("/admin/register/login", response_class=HTMLResponse)
     async def admin_login_page():
         html_file = _statics_dir / "admin" / "login.html"
         if html_file.exists():
             return HTMLResponse(content=html_file.read_text(encoding="utf-8"))
         return HTMLResponse(content="<h1>Login page not found</h1>", status_code=404)
+
+    @app.get("/admin/login", response_class=HTMLResponse)
+    async def legacy_admin_login_page():
+        return RedirectResponse(url="/admin/register/login")
 
     @app.get("/", response_class=HTMLResponse)
     async def root():

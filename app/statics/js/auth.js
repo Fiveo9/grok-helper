@@ -49,7 +49,7 @@ function buildBasicAuthHeader(username, password) {
 }
 
 async function verifyAdminKey(key) {
-  return (await fetch('/admin/register/meta', {
+  return (await fetch('/admin/register/auth/verify', {
     headers: key ? { Authorization: key } : {},
     cache: 'no-store',
   })).ok;
@@ -59,5 +59,5 @@ async function verifyKey(url, key) {
   return (await fetch(url, { headers: key ? { Authorization: `Bearer ${key}` } : {} })).ok;
 }
 
-function adminLogout() { adminKey.clear(); webuiKey.clear(); location.href='/admin/login'; }
+function adminLogout() { adminKey.clear(); webuiKey.clear(); location.href='/admin/register/login'; }
 function webuiLogout() { webuiKey.clear(); location.href='/webui/login'; }
