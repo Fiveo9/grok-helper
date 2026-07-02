@@ -55,3 +55,4 @@ htmlcov/
 # Project specific
 .ace-tool/
 .worktrees/
+.superpowers/

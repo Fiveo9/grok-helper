@@ -58,6 +58,7 @@
   const api = async (path, options = {}) => {
     const headers = {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(adminKeyValue ? { Authorization: adminKeyValue } : {}),
       ...(options.headers || {}),
     };
     const response = await fetch(`${API}${path}`, { ...options, headers, cache: 'no-store' });
@@ -66,6 +67,11 @@
       data = await response.json();
     } catch {}
     if (!response.ok) {
+      if (response.status === 401) {
+        adminKey.clear();
+        const next = encodeURIComponent(location.pathname + location.search);
+        location.href = `/admin/login?next=${next}`;
+      }
       const detail = data?.detail || data?.message || `HTTP ${response.status}`;
       throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
     }

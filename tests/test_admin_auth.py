@@ -37,10 +37,11 @@ class AdminAuthTest(unittest.TestCase):
         raw = f"{username}:{password}".encode("utf-8")
         return "Basic " + b64encode(raw).decode("ascii")
 
-    def test_register_page_requires_basic_auth(self) -> None:
+    def test_register_page_loads_without_basic_challenge(self) -> None:
         response = self.client.get("/admin/register")
-        self.assertEqual(response.status_code, 401)
-        self.assertIn("Basic", response.headers.get("www-authenticate", ""))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("www-authenticate", response.headers)
+        self.assertIn("Grok2API", response.text)
 
     def test_register_page_accepts_valid_basic_auth(self) -> None:
         response = self.client.get(
@@ -53,6 +54,12 @@ class AdminAuthTest(unittest.TestCase):
     def test_register_api_requires_basic_auth(self) -> None:
         response = self.client.get("/admin/register/meta")
         self.assertEqual(response.status_code, 401)
+        self.assertIn("Basic", response.headers.get("www-authenticate", ""))
+
+    def test_admin_login_page_exists(self) -> None:
+        response = self.client.get("/admin/login")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="admin-login-form"', response.text)
 
     def test_health_remains_public(self) -> None:
         response = self.client.get("/health")

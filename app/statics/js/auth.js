@@ -44,6 +44,17 @@ function _keyStore(k) {
 const adminKey = _keyStore('grok2api_admin_key');
 const webuiKey = _keyStore('grok2api_webui_key');
 
+function buildBasicAuthHeader(username, password) {
+  return `Basic ${_toB64(_ENC.encode(`${username}:${password}`))}`;
+}
+
+async function verifyAdminKey(key) {
+  return (await fetch('/admin/register/meta', {
+    headers: key ? { Authorization: key } : {},
+    cache: 'no-store',
+  })).ok;
+}
+
 async function verifyKey(url, key) {
   return (await fetch(url, { headers: key ? { Authorization: `Bearer ${key}` } : {} })).ok;
 }

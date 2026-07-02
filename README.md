@@ -48,7 +48,7 @@ http://localhost:8001/admin/register
 http://localhost:8000/admin/register
 ```
 
-浏览器会弹出 HTTP Basic 认证框，默认用户名为 `.env` 里的 `GROK_HELPER_ADMIN_USERNAME`，密码为 `GROK_HELPER_ADMIN_PASSWORD`。
+浏览器会显示内置管理登录页，默认用户名为 `.env` 里的 `GROK_HELPER_ADMIN_USERNAME`，密码为 `GROK_HELPER_ADMIN_PASSWORD`。登录成功后前端会为管理 API 请求附带 HTTP Basic 凭据。
 
 ## GitHub 手动构建
 
@@ -127,7 +127,7 @@ grok-helper/
 | `POST` | `/admin/register/tasks/{id}/stop` | 停止任务 |
 | `DELETE` | `/admin/register/tasks/{id}` | 删除任务 |
 
-除 `/health` 外，`/admin/register` 页面和 `/admin/register/*` API 都需要 HTTP Basic 认证。
+除 `/health` 和管理登录/页面壳外，`/admin/register/*` API 都需要 HTTP Basic 认证。
 
 ## 技术栈
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fiveonine - 管理登录</title>
+  <link rel="icon" href="/favicon.ico?v={{APP_VERSION}}">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="/static/css/app.css?v={{APP_VERSION}}" rel="stylesheet">
+</head>
+<body class="login-body">
+  <div class="login-bg"></div>
+  <div class="login-shell">
+    <form class="login-card" id="admin-login-form" autocomplete="on">
+      <div class="login-brand">
+        <a href="https://github.com/chenyme/grok2api" target="_blank" rel="noopener" class="flex items-center gap-2" style="color:inherit">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.48 0-.24-.01-.86-.01-1.69-2.78.62-3.37-1.37-3.37-1.37-.45-1.17-1.11-1.48-1.11-1.48-.91-.64.07-.63.07-.63 1.01.07 1.54 1.06 1.54 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 6.79c.85 0 1.7.12 2.5.36 1.9-1.32 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.81-4.58 5.06.36.32.68.95.68 1.92 0 1.38-.01 2.49-.01 2.83 0 .26.18.58.69.48A10.05 10.05 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg>
+          <span>Fiveonine</span>
+        </a>
+      </div>
+      <div class="login-title">注册控制台</div>
+      <div class="login-subtitle">输入管理员凭据后继续。</div>
+      <div class="login-form">
+        <input type="text" id="admin-username" name="username" placeholder="用户名" autocomplete="username" class="input" style="height:32px;font-size:12px" value="admin">
+        <input type="password" id="admin-password" name="password" placeholder="管理员密码" autocomplete="current-password" class="input" style="height:32px;font-size:12px">
+        <button type="submit" class="btn btn-primary w-full" id="admin-login-submit" style="font-size:12px">进入控制台</button>
+        <div class="login-subtitle" id="admin-login-notice" role="status" aria-live="polite"></div>
+      </div>
+    </form>
+  </div>
+  <script src="/static/js/auth.js?v={{APP_VERSION}}"></script>
+  <script src="/static/js/footer.js?v={{APP_VERSION}}"></script>
+  <script>
+    const form = document.getElementById('admin-login-form');
+    const username = document.getElementById('admin-username');
+    const password = document.getElementById('admin-password');
+    const submit = document.getElementById('admin-login-submit');
+    const notice = document.getElementById('admin-login-notice');
+
+    const safeNext = () => {
+      const next = new URLSearchParams(location.search).get('next') || '/admin/register';
+      return next.startsWith('/') && !next.startsWith('//') ? next : '/admin/register';
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const header = buildBasicAuthHeader(username.value.trim() || 'admin', password.value);
+      submit.disabled = true;
+      notice.textContent = '正在验证...';
+      try {
+        if (await verifyAdminKey(header)) {
+          await adminKey.set(header);
+          location.href = safeNext();
+          return;
+        }
+        notice.textContent = '用户名或密码不正确。';
+        password.select();
+      } catch {
+        notice.textContent = '连接失败，请稍后重试。';
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    (async () => {
+      try {
+        const stored = await adminKey.get();
+        if (stored && await verifyAdminKey(stored)) location.href = safeNext();
+        else if (stored) adminKey.clear();
+      } catch {}
+      await renderSiteFooter?.();
+      password.focus();
+    })();
+  </script>
+</body>
+</html>

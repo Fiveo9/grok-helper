@@ -169,8 +169,21 @@
   await new Promise((resolve) => window.I18n?.onReady ? I18n.onReady(resolve) : resolve());
   await renderAdminHeader?.();
   await renderSiteFooter?.();
-  // 跳过认证检查，直接初始化
-  window.initRegisterConsole('');
+  const redirectToLogin = () => {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.href = `/admin/login?next=${next}`;
+  };
+  try {
+    const stored = await adminKey.get();
+    if (!stored || !(await verifyAdminKey(stored))) {
+      if (stored) adminKey.clear();
+      redirectToLogin();
+      return;
+    }
+    window.initRegisterConsole(stored);
+  } catch {
+    redirectToLogin();
+  }
 })();
 </script>
 </body>

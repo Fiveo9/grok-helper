@@ -48,7 +48,7 @@ def create_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(_statics_dir)), name="static")
 
     # 管理页面路由
-    @app.get("/admin/register", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+    @app.get("/admin/register", response_class=HTMLResponse)
     async def admin_register_page():
         html_file = _statics_dir / "admin" / "register.html"
         if html_file.exists():
