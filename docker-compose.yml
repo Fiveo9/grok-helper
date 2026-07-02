@@ -9,7 +9,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FILE_ENABLED: ${LOG_FILE_ENABLED:-true}
       SERVER_HOST: 0.0.0.0
-      SERVER_PORT: 8000
+      SERVER_PORT: 8001
       GROK_HELPER_ADMIN_USERNAME: ${GROK_HELPER_ADMIN_USERNAME:-admin}
       GROK_HELPER_ADMIN_PASSWORD: ${GROK_HELPER_ADMIN_PASSWORD:?Set GROK_HELPER_ADMIN_PASSWORD in .env}
       DATA_DIR: /app/data
@@ -32,7 +32,7 @@ services:
       GROK_REGISTER_DEFAULT_API_APPEND: ${GROK_REGISTER_DEFAULT_API_APPEND:-true}
       FLARESOLVERR_URL: ${FLARESOLVERR_URL:-}
     ports:
-      - "127.0.0.1:${REGISTER_HOST_PORT:-8001}:8000"
+      - "127.0.0.1:${REGISTER_HOST_PORT:-8001}:8001"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

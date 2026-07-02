@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \
     SERVER_HOST=0.0.0.0 \
-    SERVER_PORT=8000 \
+    SERVER_PORT=8001 \
     DATA_DIR=/app/data \
     LOG_DIR=/app/logs \
     GROK_REGISTER_SOURCE_DIR=/app \
@@ -60,9 +60,9 @@ COPY app/statics ./app/statics
 # 注册任务和服务日志都写入可挂载目录，避免容器重建丢状态。
 RUN mkdir -p /app/data/register /app/logs
 
-EXPOSE 8000
+EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["sh", "-c", "wget -qO /dev/null http://127.0.0.1:${SERVER_PORT}/health || exit 1"]
 
-CMD ["granian", "--interface", "asgi", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "main:app"]
+CMD ["sh", "-c", "granian --interface asgi --host ${SERVER_HOST} --port ${SERVER_PORT} --workers 1 main:app"]

@@ -42,10 +42,16 @@ docker compose up -d --build
 http://localhost:8001/admin/register
 ```
 
-如直接在本机运行服务，默认访问地址为：
+如直接在本机运行服务，建议使用 8001 端口，避免和常见的 grok2api 8000 端口冲突：
 
 ```bash
-http://localhost:8000/admin/register
+granian --interface asgi --host 0.0.0.0 --port 8001 main:app
+```
+
+默认访问地址为：
+
+```bash
+http://localhost:8001/admin/register
 ```
 
 浏览器会显示内置管理登录页，默认用户名为 `.env` 里的 `GROK_HELPER_ADMIN_USERNAME`，密码为 `GROK_HELPER_ADMIN_PASSWORD`。登录成功后前端会为管理 API 请求附带 HTTP Basic 凭据。
