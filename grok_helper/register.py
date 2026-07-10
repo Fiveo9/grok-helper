@@ -8,6 +8,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import tarfile
 import threading
 from contextlib import closing
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ SOURCE_PYTHON = SOURCE_VENV_PYTHON
 MAX_CONCURRENT_TASKS = max(1, int(os.getenv("GROK_REGISTER_CONSOLE_MAX_CONCURRENT_TASKS", "1")))
 SUPERVISOR_INTERVAL = max(1.0, float(os.getenv("GROK_REGISTER_CONSOLE_POLL_INTERVAL", "2")))
 
-PROJECT_FILES = ("DrissionPage_example.py", "email_register.py")
+PROJECT_FILES = ("DrissionPage_example.py", "email_register.py", "sso_to_cpa.py")
 PROJECT_DIRS = ("turnstilePatch",)
 
 STATUS_QUEUED = "queued"
@@ -485,6 +486,31 @@ def copy_source_to_task_dir(task_dir: Path, task_config: dict[str, Any]) -> None
     )
 
 
+def package_cpa_auths(task_dir: Path) -> Path | None:
+    """把任务目录里 DrissionPage_example.py 导出的 CPA auth json 打成 tar.gz。
+
+    单账号 json 由注册脚本写入 `<task_dir>/sso/cpa_auths/xai-*.json`。
+    任务结束时统一打包，方便下载/迁移/导入 CPA。无 json 时返回 None，
+    任何失败都吞掉，不影响任务状态收尾。
+    """
+    try:
+        auth_dir = task_dir / "sso" / "cpa_auths"
+        if not auth_dir.is_dir():
+            return None
+        auth_files = sorted(auth_dir.glob("xai-*.json"))
+        if not auth_files:
+            return None
+        archive_path = task_dir / "cpa_xai_auth_import.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as tar:
+            for auth_file in auth_files:
+                tar.add(auth_file, arcname=auth_file.name)
+        logger.info(f"[register] 已打包 {len(auth_files)} 个 CPA auth: {archive_path}")
+        return archive_path
+    except Exception as exc:
+        logger.error(f"[register] 打包 CPA auth 失败: {exc}")
+        return None
+
+
 def _mask_proxy(proxy_url: str) -> str:
     try:
         parsed = urlparse(proxy_url)
@@ -851,6 +877,11 @@ class TaskSupervisor:
                 managed = self._processes.pop(task_id, None)
             if managed:
                 self._close_managed(managed)
+            try:
+                row = task_row(task_id)
+                package_cpa_auths(Path(row["task_dir"]))
+            except HTTPException:
+                pass
 
     def _terminate_process(self, managed: ManagedProcess) -> None:
         if managed.process.poll() is not None:

@@ -30,10 +30,16 @@ services:
       GROK_REGISTER_DEFAULT_API_ENDPOINT: ${GROK_REGISTER_DEFAULT_API_ENDPOINT:-}
       GROK_REGISTER_DEFAULT_API_TOKEN: ${GROK_REGISTER_DEFAULT_API_TOKEN:-}
       GROK_REGISTER_DEFAULT_API_APPEND: ${GROK_REGISTER_DEFAULT_API_APPEND:-true}
+      # 注册成功后把 sso 换成 CPA 的 xai auth json；写入下方挂载的 CPA auth 目录。
+      GROK_REGISTER_CPA_EXPORT_ENABLED: ${GROK_REGISTER_CPA_EXPORT_ENABLED:-true}
+      GROK_REGISTER_CPA_AUTH_DIR: ${GROK_REGISTER_CPA_AUTH_DIR:-}
       FLARESOLVERR_URL: ${FLARESOLVERR_URL:-}
     ports:
       - "127.0.0.1:${REGISTER_HOST_PORT:-8001}:8001"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      # 可选：把 CPA 的 auth 目录挂进来，注册成功即自动写入 xai-*.json。
+      # 需同时设置 GROK_REGISTER_CPA_AUTH_DIR=/app/cpa-auths。
+      # - ${CPA_AUTH_HOST_DIR:-/opt/cli-proxy-api-official/auths}:/app/cpa-auths
     restart: unless-stopped

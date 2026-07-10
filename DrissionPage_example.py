@@ -1076,6 +1076,61 @@ def append_sso_to_txt(sso_value, output_path=DEFAULT_SSO_FILE):
     print(f"[*] 已追加写入 sso 到文件: {output_path}")
 
 
+def _load_config_request_proxy() -> str:
+    # CPA token 换取与浏览器走同一出口，优先 proxy，其次 browser_proxy。
+    try:
+        import json as _json
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = _json.load(f)
+        return str(cfg.get("proxy") or cfg.get("browser_proxy") or "")
+    except Exception:
+        return ""
+
+
+def export_cpa_auth(sso_value, email, output_path):
+    # 注册成功后，把 sso 换成 CPA 的 xai auth json。
+    # 换取一次 token，写到任务本地目录（sso/cpa_auths）以及可选的 CPA 运行目录。
+    # 任何失败都不抛出，避免影响注册主流程与后续轮次。
+    enabled = os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return
+
+    try:
+        import sso_to_cpa
+    except Exception as e:
+        print(f"  ❌ CPA 导出跳过：无法加载 sso_to_cpa: {e}")
+        return
+
+    target_dirs = [os.path.join(os.path.dirname(output_path), "cpa_auths")]
+    env_dir = os.getenv("GROK_REGISTER_CPA_AUTH_DIR", "").strip()
+    if env_dir:
+        target_dirs.append(env_dir)
+
+    try:
+        sso_to_cpa.configure(proxy=_load_config_request_proxy(), verify_tls=True)
+        sso = sso_to_cpa.normalize_sso_cookie(sso_value)
+        token = sso_to_cpa.sso_to_token(sso)
+        if not token:
+            print("  ❌ CPA 导出失败：未能换取 access_token")
+            return
+        uid, entry = sso_to_cpa.token_to_auth_entry(token, sso_cookie=sso, email=email)
+        file_id = (
+            sso_to_cpa.safe_filename_part(email)
+            or sso_to_cpa.safe_filename_part(uid)
+            or secrets.token_hex(4)
+        )
+        for target in target_dirs:
+            try:
+                path = os.path.join(target, f"xai-{file_id}.json")
+                sso_to_cpa.write_auth_json(__import__("pathlib").Path(path), entry)
+                print(f"  💾 CPA auth 已导出: {path}")
+            except Exception as e:
+                print(f"  ❌ CPA auth 写入失败 ({target}): {e}")
+    except Exception as e:
+        print(f"  ❌ CPA 导出异常: {e}")
+
+
 def push_sso_to_api(new_tokens: list):
     # 推送 SSO token 到 grok2api 管理接口。
     # append=false：直接将本次 token 列表全量推送（覆盖）。
@@ -1171,6 +1226,7 @@ def run_single_registration(output_path=DEFAULT_SSO_FILE, extract_numbers=False)
     profile = fill_profile_and_submit()
     sso_value = wait_for_sso_cookie()
     append_sso_to_txt(sso_value, output_path)
+    export_cpa_auth(sso_value, email, output_path)
 
     if extract_numbers:
         extract_visible_numbers()

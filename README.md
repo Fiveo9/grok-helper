@@ -92,6 +92,31 @@ docker load -i grok-helper-latest-docker-image.tar
 | `GROK_REGISTER_DEFAULT_PROXY` | API 请求代理 | 空 |
 | `GROK_REGISTER_DEFAULT_BROWSER_PROXY` | 浏览器代理 | 空 |
 | `GROK_REGISTER_CONSOLE_MAX_CONCURRENT_TASKS` | 最大并发任务数 | 1 |
+| `GROK_REGISTER_CPA_EXPORT_ENABLED` | 注册成功后把 sso 换成 CPA xai auth json | true |
+| `GROK_REGISTER_CPA_AUTH_DIR` | CPA auth 目录（容器内路径），设置后自动写入 `xai-*.json` | 空 |
+
+### CPA auth 自动导出
+
+注册成功后，会用 sso cookie 走 xAI 的 OAuth Device Flow 换取 `access_token` / `refresh_token`，
+生成 CPA（cli-proxy-api）可直接导入的 `xai-<email>.json`：
+
+- 始终写一份到任务目录 `data/register/tasks/task_<id>/sso/cpa_auths/`；
+- 若设置了 `GROK_REGISTER_CPA_AUTH_DIR`，再写一份到该目录（供 CPA 直接识别）；
+- 任务结束时把该任务的所有 json 打包成 `cpa_xai_auth_import.tar.gz`，方便下载/迁移。
+
+要让 CPA 自动识别，在 `docker-compose.yml` 里放开 CPA auth 目录挂载并设置环境变量：
+
+```yaml
+environment:
+  GROK_REGISTER_CPA_EXPORT_ENABLED: "true"
+  GROK_REGISTER_CPA_AUTH_DIR: /app/cpa-auths
+volumes:
+  - /opt/cli-proxy-api-official/auths:/app/cpa-auths
+```
+
+> Device Flow 需要逐个账号轮询换取，会给每轮注册增加数秒开销。若不需要实时写入，
+> 可设 `GROK_REGISTER_CPA_EXPORT_ENABLED=false`，改用 CLI 事后批量转换：
+> `python sso_to_cpa.py --sso data/register/tasks/task_<id>/sso/task_<id>.txt --out-dir ./cpa`
 
 ## 项目结构
 
@@ -104,6 +129,7 @@ grok-helper/
 ├── app/statics/            # 前端静态文件
 ├── email_register.py       # 临时邮箱注册逻辑
 ├── DrissionPage_example.py # 浏览器自动化注册
+├── sso_to_cpa.py           # sso → CPA xai auth json（库 + CLI）
 ├── turnstilePatch/         # Turnstile 绕过脚本
 ├── main.py                 # FastAPI 入口
 ├── Dockerfile
