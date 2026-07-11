@@ -87,6 +87,18 @@ if not os.environ.get("DISPLAY") or os.environ.get("USE_XVFB") == "1":
     except Exception as e:
         print(f"[Warn] Xvfb 启动失败: {e}，将尝试直接运行")
 
+
+def stop_virtual_display():
+    global _virtual_display
+    if _virtual_display is None:
+        return
+    try:
+        _virtual_display.stop()
+    except Exception:
+        pass
+    _virtual_display = None
+
+
 co = ChromiumOptions()
 co.auto_port()
 co.set_argument("--no-sandbox")
@@ -1311,6 +1323,7 @@ def main():
             push_sso_to_api(collected_sso)
 
         stop_browser()
+        stop_virtual_display()
 
 
 if __name__ == "__main__":

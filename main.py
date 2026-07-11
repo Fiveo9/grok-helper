@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Grok Register", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Grok Helper", version="0.1.0", lifespan=lifespan)
     app.include_router(register_router)
 
     @app.get("/health")

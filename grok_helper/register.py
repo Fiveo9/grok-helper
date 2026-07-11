@@ -37,6 +37,18 @@ SOURCE_PYTHON = SOURCE_VENV_PYTHON
 MAX_CONCURRENT_TASKS = max(1, int(os.getenv("GROK_REGISTER_CONSOLE_MAX_CONCURRENT_TASKS", "1")))
 SUPERVISOR_INTERVAL = max(1.0, float(os.getenv("GROK_REGISTER_CONSOLE_POLL_INTERVAL", "2")))
 
+
+def _env_seconds(name: str, default: int, minimum: int = 30) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = default
+    return max(minimum, value)
+
+
+STALL_TIMEOUT_SECONDS = _env_seconds("GROK_REGISTER_CONSOLE_STALL_TIMEOUT", 300)
+
 PROJECT_FILES = ("DrissionPage_example.py", "email_register.py", "sso_to_cpa.py")
 PROJECT_DIRS = ("turnstilePatch",)
 
@@ -92,6 +104,22 @@ class ManagedProcess:
 
 def now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _task_is_stalled(last_log_at: str | None) -> bool:
+    activity_at = _parse_timestamp(last_log_at)
+    if activity_at is None:
+        return False
+    return (datetime.now() - activity_at).total_seconds() >= STALL_TIMEOUT_SECONDS
 
 
 def ensure_dirs() -> None:
@@ -792,6 +820,7 @@ class TaskSupervisor:
 
     def _refresh_running(self) -> None:
         finished: list[int] = []
+        closed: set[int] = set()
         with self._lock:
             managed_items = list(self._processes.items())
         for task_id, managed in managed_items:
@@ -839,6 +868,39 @@ class TaskSupervisor:
             )
             exit_code = managed.process.poll()
             if exit_code is None:
+                current = fetch_one("SELECT status FROM tasks WHERE id = ?", (task_id,))
+                if (current and current["status"] == STATUS_STOPPING) or not _task_is_stalled(parsed["last_log_at"]):
+                    continue
+
+                timeout_error = f"任务连续 {STALL_TIMEOUT_SECONDS} 秒无日志进展，已自动终止"
+                self._terminate_process(managed)
+                exit_code = self._close_managed(managed)
+                closed.add(task_id)
+                stalled_status = STATUS_PARTIAL if parsed["completed_count"] > 0 else STATUS_FAILED
+                execute_no_return(
+                    """
+                    UPDATE tasks
+                    SET status = ?, finished_at = ?, exit_code = ?,
+                        completed_count = ?, failed_count = ?, current_round = ?,
+                        current_phase = ?, last_email = ?, last_error = ?,
+                        last_log_at = ?, pid = NULL
+                    WHERE id = ?
+                    """,
+                    (
+                        stalled_status,
+                        now_iso(),
+                        exit_code,
+                        parsed["completed_count"],
+                        parsed["failed_count"],
+                        parsed["current_round"],
+                        "stalled_timeout",
+                        parsed["last_email"],
+                        timeout_error,
+                        parsed["last_log_at"],
+                        task_id,
+                    ),
+                )
+                finished.append(task_id)
                 continue
 
             final_status = STATUS_FAILED
@@ -875,7 +937,7 @@ class TaskSupervisor:
         for task_id in finished:
             with self._lock:
                 managed = self._processes.pop(task_id, None)
-            if managed:
+            if managed and task_id not in closed:
                 self._close_managed(managed)
             try:
                 row = task_row(task_id)
