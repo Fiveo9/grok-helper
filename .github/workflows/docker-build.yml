@@ -1,3 +1,4 @@
+# Manual Docker image build (workflow_dispatch only) — re-touch to force GitHub to register this workflow
 name: Manual Docker Build
 run-name: Build ${{ inputs.image_name || 'grok-helper' }}:${{ inputs.image_tag || 'latest' }}
 
