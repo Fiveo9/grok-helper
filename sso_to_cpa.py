@@ -252,6 +252,48 @@ def sso_to_token(sso_cookie: str) -> dict | None:
     return token
 
 
+def verify_cpa_access(access_token: str) -> tuple[bool, str]:
+    """用换到的 access_token 探测 CPA 后端，判断账号是否真有 grok-cli 访问权限。
+
+    新注册的 xAI 账号有时没有 grok-cli:access 权限，CPA 调用会返回 403 permission-denied。
+    这里提前探测 `{BASE_URL}/models`：
+      - 命中 403 / permission-denied → 返回 (False, reason)，调用方应跳过 CPA 导出；
+      - 其它响应（含 401/429/网络异常等不确定情况）→ 返回 (True, reason) 走 fail-open，
+        避免因探测端点或网络问题误杀正常账号。
+    """
+    token = str(access_token or "").strip()
+    if not token:
+        return False, "empty access_token"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "x-grok-client-version": "0.2.93",
+        "x-xai-token-auth": "xai-grok-cli",
+        "x-grok-client-identifier": "grok-shell",
+        "User-Agent": "grok-shell/0.2.93 (linux; x86_64)",
+    }
+    try:
+        r = requests.get(
+            f"{BASE_URL}/models",
+            headers=headers,
+            **request_kwargs({"impersonate": "chrome", "timeout": 15}),
+        )
+    except Exception as e:
+        # 探测本身失败，无法判定权限；fail-open，交给 CPA 侧后续处理。
+        return True, f"probe error: {e}"
+
+    status = getattr(r, "status_code", 0)
+    try:
+        body = str(r.text or "")[:300]
+    except Exception:
+        body = ""
+    low = body.lower()
+    denied = status == 403 or "permission-denied" in low or "permission_denied" in low
+    if denied:
+        return False, f"HTTP {status}: {body[:120]}".strip()
+    return True, f"HTTP {status}"
+
+
 def token_to_auth_entry(token: dict, sso_cookie: str, email: str = "") -> tuple[str, dict]:
     access = token.get("access_token") or token.get("key") or ""
     refresh = token.get("refresh_token") or ""
@@ -348,6 +390,12 @@ def export_cpa_auth_from_sso(
         if not token:
             print("  ❌ CPA 导出失败：未能换取 access_token")
             return None
+        access_token = token.get("access_token") or token.get("key") or ""
+        allowed, reason = verify_cpa_access(access_token)
+        if not allowed:
+            print(f"  ⚠️ 账号无 CPA 访问权限，跳过导出 CPA auth（{reason}）")
+            return None
+        print(f"  ✅ CPA 访问权限校验通过（{reason}）")
         uid, entry = token_to_auth_entry(token, sso_cookie=sso, email=email)
         file_id = safe_filename_part(email) if email else safe_filename_part(uid)
         if not file_id:
@@ -444,6 +492,12 @@ def main() -> int:
             if not token:
                 fail += 1
                 print(f"  ❌ [{i}] 失败")
+                continue
+            access_token = token.get("access_token") or token.get("key") or ""
+            allowed, reason = verify_cpa_access(access_token)
+            if not allowed:
+                fail += 1
+                print(f"  ⚠️ [{i}] 账号无 CPA 访问权限，跳过（{reason}）")
                 continue
             uid, entry = token_to_auth_entry(token, sso_cookie=sso, email=email)
             entry_key = email or uid or secrets.token_hex(4)

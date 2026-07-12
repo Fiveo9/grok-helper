@@ -1126,6 +1126,12 @@ def export_cpa_auth(sso_value, email, output_path):
         if not token:
             print("  ❌ CPA 导出失败：未能换取 access_token")
             return
+        access_token = token.get("access_token") or token.get("key") or ""
+        allowed, reason = sso_to_cpa.verify_cpa_access(access_token)
+        if not allowed:
+            print(f"  ⚠️ 账号无 CPA 访问权限，跳过导出 CPA auth（{reason}）；sso 仍会推送到 grok2api。")
+            return
+        print(f"  ✅ CPA 访问权限校验通过（{reason}）")
         uid, entry = sso_to_cpa.token_to_auth_entry(token, sso_cookie=sso, email=email)
         file_id = (
             sso_to_cpa.safe_filename_part(email)
