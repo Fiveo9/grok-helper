@@ -1277,6 +1277,26 @@ def load_run_count() -> int:
     return 10
 
 
+def resolve_attempt_cap(target_count: int) -> int:
+    # --count 现在表示“需要成功的数量”，注册失败会自动补一轮。为避免代理失效 / IP 被封时
+    # 无限重试，这里给出一个总尝试次数上限：target * factor（向上取整），再加一个固定缓冲。
+    # target_count <= 0（无限模式）时返回 0，表示不限制尝试次数。
+    if target_count <= 0:
+        return 0
+
+    def _env_int(name: str, default: int, minimum: int) -> int:
+        raw = os.environ.get(name, "").strip()
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, value)
+
+    factor = _env_int("GROK_REGISTER_ATTEMPT_FACTOR", 3, 1)
+    buffer = _env_int("GROK_REGISTER_ATTEMPT_BUFFER", 5, 0)
+    return target_count * factor + buffer
+
+
 def main():
     # 默认循环执行；每轮完成后关闭当前页，再自动进入下一轮。
     global run_logger
@@ -1285,36 +1305,66 @@ def main():
     config_count = load_run_count()
 
     parser = argparse.ArgumentParser(description="xAI 自动注册并采集 sso")
-    parser.add_argument("--count", type=int, default=config_count, help=f"执行轮数，0 表示无限循环（默认读取 config.json run.count，当前 {config_count}）")
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=config_count,
+        help=(
+            "需要成功注册的账号数量，0 表示无限循环。注册失败会自动补一轮，"
+            f"直到成功数量达到目标（默认读取 config.json run.count，当前 {config_count}）"
+        ),
+    )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=0,
+        help="总尝试轮数上限，0 表示自动按 --count 推算（GROK_REGISTER_ATTEMPT_FACTOR / _BUFFER）",
+    )
     parser.add_argument("--output", default=DEFAULT_SSO_FILE, help="sso 输出 txt 路径")
     parser.add_argument("--extract-numbers", action="store_true", help="注册完成后额外提取页面数字文本")
     args = parser.parse_args()
 
-    current_round = 0
+    attempt_cap = args.max_attempts if args.max_attempts > 0 else resolve_attempt_cap(args.count)
+    if args.count > 0:
+        cap_hint = f"，最多尝试 {attempt_cap} 轮" if attempt_cap > 0 else ""
+        print(f"[*] 目标成功数量: {args.count}{cap_hint}（失败自动补轮）")
+
+    attempt = 0
+    success_count = 0
     collected_sso: list = []
     try:
         start_browser()
         while True:
-            if args.count > 0 and current_round >= args.count:
+            if args.count > 0 and success_count >= args.count:
+                break
+            if attempt_cap > 0 and attempt >= attempt_cap:
+                print(
+                    f"[Warn] 已达到最大尝试轮数 {attempt_cap}，"
+                    f"成功 {success_count}/{args.count}，停止补轮。"
+                )
                 break
 
-            current_round += 1
-            print(f"\n[*] 开始第 {current_round} 轮注册")
-            round_succeeded = False
+            attempt += 1
+            if args.count > 0:
+                print(f"\n[*] 开始第 {attempt} 轮注册（已成功 {success_count}/{args.count}）")
+            else:
+                print(f"\n[*] 开始第 {attempt} 轮注册（已成功 {success_count}）")
 
             try:
                 result = run_single_registration(args.output, extract_numbers=args.extract_numbers)
                 collected_sso.append(result["sso"])
-                round_succeeded = True
+                success_count += 1
             except KeyboardInterrupt:
                 print("\n[Info] 收到中断信号，停止后续轮次。")
                 break
             except Exception as error:
-                print(f"[Error] 第 {current_round} 轮失败: {error}")
+                print(f"[Error] 第 {attempt} 轮失败: {error}")
             finally:
                 restart_browser()
 
-            if args.count == 0 or current_round < args.count:
+            still_pending = args.count == 0 or success_count < args.count
+            has_attempts_left = attempt_cap == 0 or attempt < attempt_cap
+            if still_pending and has_attempts_left:
                 time.sleep(2)
 
     finally:
