@@ -14,9 +14,9 @@ on:
         required: false
         default: latest
       push_to_ghcr:
-        description: Set to true to push image to GitHub Container Registry
+        description: Set to false to skip pushing image to GitHub Container Registry
         required: false
-        default: "false"
+        default: "true"
 
 permissions:
   contents: read
