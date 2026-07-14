@@ -27,11 +27,13 @@
     'temp_mail_domain',
     'temp_mail_site_password',
     'api_token',
+    'grok2api_password',
   ]);
   const nonLoginSecretPayloadKeys = new Set([
     'temp_mail_admin_password',
     'temp_mail_site_password',
     'api_token',
+    'grok2api_password',
   ]);
 
   const $ = (id) => document.getElementById(id);
@@ -122,6 +124,7 @@
   const renderSettingsForm = (settings = {}, defaults = {}) => {
     currentDefaults = defaults || {};
     const apiDefaults = currentDefaults.api || {};
+    const g2aDefaults = currentDefaults.grok2api || {};
     const form = $('register-settings-form');
     if (!form) return;
     const provider = fieldValue(settings, 'temp_mail_provider', currentDefaults.temp_mail_provider);
@@ -144,10 +147,25 @@
       inputField('api_endpoint', 'Token Sink', fieldValue(settings, 'api_endpoint', apiDefaults.endpoint), 'http://127.0.0.1:8000/admin/api/tokens', 'text', true),
       inputField('api_token', 'Token Sink Key', '', '已有值则留空不修改', 'password'),
       checkboxField('api_append', '追加写入 token', fieldValue(settings, 'api_append', apiDefaults.append ?? true)),
+      renderGrok2apiSection(settings, g2aDefaults),
       '<div class="form-field wide"><button type="submit" class="page-action-btn page-action-btn-primary">保存默认设置</button></div>',
     ].join('');
     form.dataset.tempMailProvider = String(provider || '');
   };
+
+  const renderGrok2apiSection = (settings = {}, g2a = {}) => [
+    '<div class="form-field wide" style="margin-top:6px;border-top:1px solid #eee;padding-top:12px">',
+    '<div style="font-size:12px;font-weight:650;color:#333">grok2api 三池推送</div>',
+    '<div style="font-size:11px;color:#9a9a9a;margin-top:4px">注册成功后按池推送到 chenyme/grok2api（Go 版）。与上方 Token Sink 独立，各池可单独开关。</div>',
+    '</div>',
+    checkboxField('grok2api_enabled', '启用 grok2api 推送', fieldValue(settings, 'grok2api_enabled', g2a.enabled ?? false)),
+    inputField('grok2api_base_url', 'grok2api 地址', fieldValue(settings, 'grok2api_base_url', g2a.base_url), 'http://grok2api:8080'),
+    inputField('grok2api_username', '管理员账号', fieldValue(settings, 'grok2api_username', g2a.username), 'admin'),
+    inputField('grok2api_password', '管理员密码', '', '已有值则留空不修改', 'password'),
+    checkboxField('grok2api_push_build', '推送 Grok Build', fieldValue(settings, 'grok2api_push_build', g2a.push_build ?? true)),
+    checkboxField('grok2api_push_web', '推送 Grok Web', fieldValue(settings, 'grok2api_push_web', g2a.push_web ?? true)),
+    checkboxField('grok2api_push_console', '推送 Grok Console', fieldValue(settings, 'grok2api_push_console', g2a.push_console ?? true)),
+  ].join('');
 
   const renderCreateForm = () => {
     const form = $('register-create-form');
@@ -213,17 +231,30 @@
       <span class="check-row"><input name="${esc(name)}" type="checkbox" ${checked ? 'checked' : ''}> 启用</span>
     </div>`;
 
+  const booleanPayloadKeys = new Set([
+    'api_append',
+    'grok2api_enabled',
+    'grok2api_push_build',
+    'grok2api_push_web',
+    'grok2api_push_console',
+  ]);
+
   const formPayload = (form, includeEmpty = true) => {
     const data = new FormData(form);
     const payload = {};
     for (const [key, value] of data.entries()) {
       const payloadKey = payloadKeyFor(key);
-      if (payloadKey === 'api_append') continue;
+      if (booleanPayloadKeys.has(payloadKey)) continue;
       const trimmed = String(value).trim();
       if (includeEmpty || trimmed) payload[payloadKey] = trimmed;
     }
     if (form.elements.count) payload.count = Math.max(1, Number(payload.count || 1));
     payload.api_append = Boolean(form.elements.api_append?.checked);
+    if (form.id === 'register-settings-form') {
+      for (const key of ['grok2api_enabled', 'grok2api_push_build', 'grok2api_push_web', 'grok2api_push_console']) {
+        payload[key] = Boolean(form.elements[key]?.checked);
+      }
+    }
     if (form.id === 'register-settings-form') {
       const provider = String(payload.temp_mail_provider || '').trim().toLowerCase();
       if (provider === 'cloudmail' && Object.prototype.hasOwnProperty.call(payload, 'temp_mail_domain')) {

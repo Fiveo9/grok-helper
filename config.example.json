@@ -14,5 +14,14 @@
         "endpoint": "http://127.0.0.1:8000/admin/api/tokens",
         "token": "",
         "append": true
+    },
+    "grok2api": {
+        "enabled": false,
+        "base_url": "http://grok2api:8080",
+        "username": "admin",
+        "password": "",
+        "push_build": true,
+        "push_web": true,
+        "push_console": true
     }
 }

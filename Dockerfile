@@ -53,7 +53,7 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY grok_helper ./grok_helper
-COPY main.py config.example.json DrissionPage_example.py email_register.py sso_to_cpa.py ./
+COPY main.py config.example.json DrissionPage_example.py email_register.py sso_to_cpa.py grok2api_push.py ./
 COPY turnstilePatch ./turnstilePatch
 COPY app/statics ./app/statics
 

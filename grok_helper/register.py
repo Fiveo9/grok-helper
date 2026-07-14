@@ -49,7 +49,7 @@ def _env_seconds(name: str, default: int, minimum: int = 30) -> int:
 
 STALL_TIMEOUT_SECONDS = _env_seconds("GROK_REGISTER_CONSOLE_STALL_TIMEOUT", 300)
 
-PROJECT_FILES = ("DrissionPage_example.py", "email_register.py", "sso_to_cpa.py")
+PROJECT_FILES = ("DrissionPage_example.py", "email_register.py", "sso_to_cpa.py", "grok2api_push.py")
 PROJECT_DIRS = ("turnstilePatch",)
 
 STATUS_QUEUED = "queued"
@@ -93,6 +93,14 @@ class SystemSettings(BaseModel):
     api_endpoint: str = ""
     api_token: str = ""
     api_append: bool = True
+    # grok2api（chenyme/grok2api，Go 版）三池推送
+    grok2api_enabled: bool = False
+    grok2api_base_url: str = ""
+    grok2api_username: str = ""
+    grok2api_password: str = ""
+    grok2api_push_build: bool = True
+    grok2api_push_web: bool = True
+    grok2api_push_console: bool = True
 
 
 @dataclass
@@ -257,6 +265,28 @@ def load_source_defaults() -> dict[str, Any]:
     if append_env is not None:
         api_base["append"] = append_env.strip().lower() in {"1", "true", "yes", "on"}
     base["api"] = api_base
+
+    # grok2api（Go 版）三池推送默认值，允许通过环境变量预置。
+    g2a = dict(base.get("grok2api") or {})
+    for key, env_name in {
+        "base_url": "GROK_REGISTER_GROK2API_BASE_URL",
+        "username": "GROK_REGISTER_GROK2API_USERNAME",
+        "password": "GROK_REGISTER_GROK2API_PASSWORD",
+    }.items():
+        value = os.getenv(env_name)
+        if value is not None:
+            g2a[key] = value
+    for key, env_name in {
+        "enabled": "GROK_REGISTER_GROK2API_ENABLED",
+        "push_build": "GROK_REGISTER_GROK2API_PUSH_BUILD",
+        "push_web": "GROK_REGISTER_GROK2API_PUSH_WEB",
+        "push_console": "GROK_REGISTER_GROK2API_PUSH_CONSOLE",
+    }.items():
+        value = os.getenv(env_name)
+        if value is not None:
+            g2a[key] = value.strip().lower() in {"1", "true", "yes", "on"}
+    if g2a:
+        base["grok2api"] = g2a
     return base
 
 
@@ -278,7 +308,7 @@ def _clean_domain_list(values: list[Any]) -> list[str]:
 def write_settings(settings: SystemSettings) -> dict[str, Any]:
     data = settings.model_dump()
     # Preserve existing sensitive values when frontend sends empty strings
-    sensitive_keys = ("temp_mail_admin_password", "temp_mail_site_password", "api_token")
+    sensitive_keys = ("temp_mail_admin_password", "temp_mail_site_password", "api_token", "grok2api_password")
     existing = read_settings()
     for key in sensitive_keys:
         if not data.get(key) and existing.get(key):
@@ -328,6 +358,31 @@ def merged_defaults() -> dict[str, Any]:
     if "api_append" in saved:
         api_base["append"] = bool(saved.get("api_append", True))
     base["api"] = api_base
+
+    # grok2api（Go 版）三池推送段：config.json 里独立于旧版 api 段。
+    g2a = dict(base.get("grok2api") or {})
+    g2a.setdefault("enabled", False)
+    g2a.setdefault("base_url", "")
+    g2a.setdefault("username", "")
+    g2a.setdefault("password", "")
+    g2a.setdefault("push_build", True)
+    g2a.setdefault("push_web", True)
+    g2a.setdefault("push_console", True)
+    if "grok2api_enabled" in saved:
+        g2a["enabled"] = bool(saved.get("grok2api_enabled", False))
+    if "grok2api_base_url" in saved:
+        g2a["base_url"] = str(saved.get("grok2api_base_url", ""))
+    if "grok2api_username" in saved:
+        g2a["username"] = str(saved.get("grok2api_username", ""))
+    if "grok2api_password" in saved:
+        g2a["password"] = str(saved.get("grok2api_password", ""))
+    if "grok2api_push_build" in saved:
+        g2a["push_build"] = bool(saved.get("grok2api_push_build", True))
+    if "grok2api_push_web" in saved:
+        g2a["push_web"] = bool(saved.get("grok2api_push_web", True))
+    if "grok2api_push_console" in saved:
+        g2a["push_console"] = bool(saved.get("grok2api_push_console", True))
+    base["grok2api"] = g2a
     return base
 
 
@@ -352,6 +407,8 @@ def build_task_config_from_defaults(defaults: dict[str, Any], payload: TaskCreat
             "token": api_defaults.get("token", "") if payload.api_token is None else payload.api_token.strip(),
             "append": api_defaults.get("append", True) if payload.api_append is None else bool(payload.api_append),
         },
+        # grok2api 三池推送为系统级配置，不支持按任务覆盖，直接沿用系统默认值。
+        "grok2api": dict(defaults.get("grok2api") or {}),
     }
 
 
@@ -375,6 +432,12 @@ def _mask_sensitive_config(config: dict[str, Any]) -> dict[str, Any]:
             val = str(api["token"])
             api["token"] = val[:2] + "***" if len(val) > 2 else "***"
         masked["api"] = api
+    if "grok2api" in masked and isinstance(masked["grok2api"], dict):
+        g2a = dict(masked["grok2api"])
+        if g2a.get("password"):
+            val = str(g2a["password"])
+            g2a["password"] = val[:2] + "***" if len(val) > 2 else "***"
+        masked["grok2api"] = g2a
     return masked
 
 
@@ -1047,7 +1110,7 @@ router = APIRouter(prefix="/admin/register", tags=["Register Admin"], dependenci
 def _mask_settings(data: dict[str, Any]) -> dict[str, Any]:
     """Mask sensitive fields in settings before returning to frontend."""
     masked = dict(data)
-    for key in ("temp_mail_admin_password", "temp_mail_site_password", "api_token"):
+    for key in ("temp_mail_admin_password", "temp_mail_site_password", "api_token", "grok2api_password"):
         if key in masked and masked[key]:
             val = str(masked[key])
             masked[key] = val[:2] + "***" if len(val) > 2 else "***"

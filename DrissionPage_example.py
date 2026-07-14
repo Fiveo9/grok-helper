@@ -1104,15 +1104,18 @@ def export_cpa_auth(sso_value, email, output_path):
     # 注册成功后，把 sso 换成 CPA 的 xai auth json。
     # 换取一次 token，写到任务本地目录（sso/cpa_auths）以及可选的 CPA 运行目录。
     # 任何失败都不抛出，避免影响注册主流程与后续轮次。
+    #
+    # 返回本次换取到的 OAuth token dict（含 grok-cli:access 权限校验通过），供调用方
+    # 复用推送到 grok2api 的 Grok Build 池，避免二次换取；无权限 / 失败时返回 None。
     enabled = os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     if not enabled:
-        return
+        return None
 
     try:
         import sso_to_cpa
     except Exception as e:
         print(f"  ❌ CPA 导出跳过：无法加载 sso_to_cpa: {e}")
-        return
+        return None
 
     target_dirs = [os.path.join(os.path.dirname(output_path), "cpa_auths")]
     env_dir = os.getenv("GROK_REGISTER_CPA_AUTH_DIR", "").strip()
@@ -1125,12 +1128,12 @@ def export_cpa_auth(sso_value, email, output_path):
         token = sso_to_cpa.sso_to_token(sso)
         if not token:
             print("  ❌ CPA 导出失败：未能换取 access_token")
-            return
+            return None
         access_token = token.get("access_token") or token.get("key") or ""
         allowed, reason = sso_to_cpa.verify_cpa_access(access_token)
         if not allowed:
             print(f"  ⚠️ 账号无 CPA 访问权限，跳过导出 CPA auth（{reason}）；sso 仍会推送到 grok2api。")
-            return
+            return None
         print(f"  ✅ CPA 访问权限校验通过（{reason}）")
         uid, entry = sso_to_cpa.token_to_auth_entry(token, sso_cookie=sso, email=email)
         file_id = (
@@ -1145,8 +1148,10 @@ def export_cpa_auth(sso_value, email, output_path):
                 print(f"  💾 CPA auth 已导出: {path}")
             except Exception as e:
                 print(f"  ❌ CPA auth 写入失败 ({target}): {e}")
+        return token
     except Exception as e:
         print(f"  ❌ CPA 导出异常: {e}")
+        return None
 
 
 def push_sso_to_api(new_tokens: list):
@@ -1236,6 +1241,43 @@ def push_sso_to_api(new_tokens: list):
         print(f"[Warn] 推送 API 失败: {e}")
 
 
+def push_to_grok2api(records: list):
+    # 注册成功后，把账号推送到 grok2api（chenyme/grok2api，Go 版）的三个池：
+    #   - Grok Build：OAuth 凭据（复用 CPA 换取到的 token，需要 grok-cli:access 权限）
+    #   - Grok Web：SSO token
+    #   - Grok Console：SSO token
+    # 通过 config.json 的 grok2api 段配置（base_url + 三个池开关 + 管理员账号密码）。
+    # 每个池独立开关，与旧版 /admin/api/tokens 推送互不影响。任何失败都吞掉，不影响主流程。
+    import json
+
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            conf = json.load(f)
+    except Exception as e:
+        print(f"[Warn] 读取 config.json 失败，跳过 grok2api 推送: {e}")
+        return
+
+    g2a_conf = conf.get("grok2api") or {}
+    if not g2a_conf.get("enabled"):
+        return
+
+    try:
+        import grok2api_push
+    except Exception as e:
+        print(f"[Warn] grok2api 推送跳过：无法加载 grok2api_push: {e}")
+        return
+
+    try:
+        grok2api_push.push_records(
+            records,
+            config=g2a_conf,
+            proxy=_load_config_request_proxy(),
+        )
+    except Exception as e:
+        print(f"[Warn] grok2api 推送失败: {e}")
+
+
 def run_single_registration(output_path=DEFAULT_SSO_FILE, extract_numbers=False):
     # 单轮流程：打开注册页 -> 完成注册 -> 获取 sso -> 写 txt。
     open_signup_page()
@@ -1244,7 +1286,7 @@ def run_single_registration(output_path=DEFAULT_SSO_FILE, extract_numbers=False)
     profile = fill_profile_and_submit()
     sso_value = wait_for_sso_cookie()
     append_sso_to_txt(sso_value, output_path)
-    export_cpa_auth(sso_value, email, output_path)
+    cpa_token = export_cpa_auth(sso_value, email, output_path)
 
     if extract_numbers:
         extract_visible_numbers()
@@ -1252,6 +1294,7 @@ def run_single_registration(output_path=DEFAULT_SSO_FILE, extract_numbers=False)
     result = {
         "email": email,
         "sso": sso_value,
+        "cpa_token": cpa_token,
         **profile,
     }
 
@@ -1338,6 +1381,7 @@ def main():
     attempt = 0
     success_count = 0
     collected_sso: list = []
+    collected_records: list = []
     try:
         start_browser()
         while True:
@@ -1359,6 +1403,7 @@ def main():
             try:
                 result = run_single_registration(args.output, extract_numbers=args.extract_numbers)
                 collected_sso.append(result["sso"])
+                collected_records.append(result)
                 success_count += 1
             except KeyboardInterrupt:
                 print("\n[Info] 收到中断信号，停止后续轮次。")
@@ -1377,6 +1422,8 @@ def main():
         if collected_sso:
             print(f"\n[*] 注册完成，推送 {len(collected_sso)} 个 token 到 API...")
             push_sso_to_api(collected_sso)
+        if collected_records:
+            push_to_grok2api(collected_records)
 
         stop_browser()
         stop_virtual_display()
