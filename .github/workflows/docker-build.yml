@@ -60,6 +60,10 @@ jobs:
           context: .
           file: ./Dockerfile
           tags: ${{ steps.vars.outputs.image-ref }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
           load: true
 
       - name: Push image to GHCR
