@@ -1116,59 +1116,87 @@ def _cpa_export_enabled() -> bool:
     return os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _grok2api_build_push_enabled() -> bool:
+    # grok2api 的 Grok Build 池是否需要推送：需要总开关 enabled 与 push_build 同时开启。
+    # 与 grok2api_push.push_records 的判定保持一致——Build 池依赖 grok-cli 权限校验通过的
+    # OAuth token，即使 CPA 导出关闭，只要 Build 开着就仍需换取 token 并检测权限。
+    def _truthy(v) -> bool:
+        if isinstance(v, bool):
+            return v
+        return str(v or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    try:
+        import json as _json
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = _json.load(f)
+        g2a = cfg.get("grok2api") or {}
+        return _truthy(g2a.get("enabled")) and _truthy(g2a.get("push_build"))
+    except Exception:
+        return False
+
+
 def export_cpa_auth(sso_value, email, output_path):
-    # 注册成功后，把 sso 换成 CPA 的 xai auth json。
-    # 换取一次 token，写到任务本地目录（sso/cpa_auths）以及可选的 CPA 运行目录。
+    # 注册成功后，把 sso 换成 OAuth token，并按需导出 CPA 的 xai auth json。
     # 任何失败都不抛出，避免影响注册主流程与后续轮次。
     #
-    # 返回本次换取到的 OAuth token dict（含 grok-cli:access 权限校验通过），供调用方
-    # 复用推送到 grok2api 的 Grok Build 池，避免二次换取；无权限 / 失败时返回 None。
+    # 换取到的 OAuth token dict 会被返回，供调用方复用推送到 grok2api 的 Grok Build 池，
+    # 避免二次换取；无权限 / 失败时返回 None。
+    #
+    # 两个消费方共享同一次 token 换取 + grok-cli 权限检测：
+    #   - CPA 导出（cpa.enabled）：写出 xai-*.json；
+    #   - grok2api Grok Build 推送（grok2api.enabled && push_build）：复用返回的 token。
+    # 只要其中任一开启，就执行换取与权限检测；两者都关时才整体跳过（不测 grok-cli 权限）。
     #
     # 开关优先级：config.json 的 cpa.enabled（控制台设置项）> 环境变量
     # GROK_REGISTER_CPA_EXPORT_ENABLED（默认 true）。
-    if not _cpa_export_enabled():
+    want_cpa = _cpa_export_enabled()
+    want_build = _grok2api_build_push_enabled()
+    if not want_cpa and not want_build:
         return None
 
     try:
         import sso_to_cpa
     except Exception as e:
-        print(f"  ❌ CPA 导出跳过：无法加载 sso_to_cpa: {e}")
+        print(f"  ❌ token 换取跳过：无法加载 sso_to_cpa: {e}")
         return None
-
-    target_dirs = [os.path.join(os.path.dirname(output_path), "cpa_auths")]
-    env_dir = os.getenv("GROK_REGISTER_CPA_AUTH_DIR", "").strip()
-    if env_dir:
-        target_dirs.append(env_dir)
 
     try:
         sso_to_cpa.configure(proxy=_load_config_request_proxy(), verify_tls=True)
         sso = sso_to_cpa.normalize_sso_cookie(sso_value)
         token = sso_to_cpa.sso_to_token(sso)
         if not token:
-            print("  ❌ CPA 导出失败：未能换取 access_token")
+            print("  ❌ token 换取失败：未能换取 access_token")
             return None
         access_token = token.get("access_token") or token.get("key") or ""
         allowed, reason = sso_to_cpa.verify_cpa_access(access_token)
         if not allowed:
-            print(f"  ⚠️ 账号无 CPA 访问权限，跳过导出 CPA auth（{reason}）；sso 仍会推送到 grok2api。")
+            print(f"  ⚠️ 账号无 grok-cli 访问权限，跳过 CPA 导出与 Grok Build 推送（{reason}）；sso 仍会推送到 grok2api Web/Console。")
             return None
-        print(f"  ✅ CPA 访问权限校验通过（{reason}）")
-        uid, entry = sso_to_cpa.token_to_auth_entry(token, sso_cookie=sso, email=email)
-        file_id = (
-            sso_to_cpa.safe_filename_part(email)
-            or sso_to_cpa.safe_filename_part(uid)
-            or secrets.token_hex(4)
-        )
-        for target in target_dirs:
-            try:
-                path = os.path.join(target, f"xai-{file_id}.json")
-                sso_to_cpa.write_auth_json(__import__("pathlib").Path(path), entry)
-                print(f"  💾 CPA auth 已导出: {path}")
-            except Exception as e:
-                print(f"  ❌ CPA auth 写入失败 ({target}): {e}")
+        print(f"  ✅ grok-cli 访问权限校验通过（{reason}）")
+
+        # CPA 导出关闭时只做换取 + 权限检测，token 仍返回供 Grok Build 复用，不写 json 文件。
+        if want_cpa:
+            uid, entry = sso_to_cpa.token_to_auth_entry(token, sso_cookie=sso, email=email)
+            file_id = (
+                sso_to_cpa.safe_filename_part(email)
+                or sso_to_cpa.safe_filename_part(uid)
+                or secrets.token_hex(4)
+            )
+            target_dirs = [os.path.join(os.path.dirname(output_path), "cpa_auths")]
+            env_dir = os.getenv("GROK_REGISTER_CPA_AUTH_DIR", "").strip()
+            if env_dir:
+                target_dirs.append(env_dir)
+            for target in target_dirs:
+                try:
+                    path = os.path.join(target, f"xai-{file_id}.json")
+                    sso_to_cpa.write_auth_json(__import__("pathlib").Path(path), entry)
+                    print(f"  💾 CPA auth 已导出: {path}")
+                except Exception as e:
+                    print(f"  ❌ CPA auth 写入失败 ({target}): {e}")
         return token
     except Exception as e:
-        print(f"  ❌ CPA 导出异常: {e}")
+        print(f"  ❌ token 换取异常: {e}")
         return None
 
 
