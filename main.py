@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
@@ -21,6 +22,14 @@ from grok_helper.register import start_register_supervisor, stop_register_superv
 
 
 setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
+
+# 静态资源缓存 busting 值：优先用显式的 APP_VERSION 环境变量，否则回退到进程启动
+# 时间戳。每次部署/重启都会变化，配合模板里的 `?v={{APP_VERSION}}` 让浏览器丢弃旧缓存。
+APP_VERSION = os.getenv("APP_VERSION", "").strip() or str(int(time.time()))
+
+
+def _render_html(html_file: Path) -> str:
+    return html_file.read_text(encoding="utf-8").replace("{{APP_VERSION}}", APP_VERSION)
 
 
 @asynccontextmanager
@@ -68,14 +77,14 @@ def create_app() -> FastAPI:
     async def admin_register_page():
         html_file = _statics_dir / "admin" / "register.html"
         if html_file.exists():
-            return HTMLResponse(content=html_file.read_text(encoding="utf-8"))
+            return HTMLResponse(content=_render_html(html_file))
         return HTMLResponse(content="<h1>Admin page not found</h1>", status_code=404)
 
     @app.get("/admin/register/login", response_class=HTMLResponse)
     async def admin_login_page():
         html_file = _statics_dir / "admin" / "login.html"
         if html_file.exists():
-            return HTMLResponse(content=html_file.read_text(encoding="utf-8"))
+            return HTMLResponse(content=_render_html(html_file))
         return HTMLResponse(content="<h1>Login page not found</h1>", status_code=404)
 
     @app.get("/admin/login", response_class=HTMLResponse)
