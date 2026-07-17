@@ -125,6 +125,7 @@
     currentDefaults = defaults || {};
     const apiDefaults = currentDefaults.api || {};
     const g2aDefaults = currentDefaults.grok2api || {};
+    const cpaDefaults = currentDefaults.cpa || {};
     const form = $('register-settings-form');
     if (!form) return;
     const provider = fieldValue(settings, 'temp_mail_provider', currentDefaults.temp_mail_provider);
@@ -148,6 +149,7 @@
       inputField('api_token', 'Token Sink Key', '', '已有值则留空不修改', 'password'),
       checkboxField('api_append', '追加写入 token', fieldValue(settings, 'api_append', apiDefaults.append ?? true)),
       renderGrok2apiSection(settings, g2aDefaults),
+      renderCpaSection(settings, cpaDefaults),
       '<div class="form-field wide"><button type="submit" class="page-action-btn page-action-btn-primary">保存默认设置</button></div>',
     ].join('');
     form.dataset.tempMailProvider = String(provider || '');
@@ -165,6 +167,14 @@
     checkboxField('grok2api_push_build', '推送 Grok Build', fieldValue(settings, 'grok2api_push_build', g2a.push_build ?? true)),
     checkboxField('grok2api_push_web', '推送 Grok Web', fieldValue(settings, 'grok2api_push_web', g2a.push_web ?? true)),
     checkboxField('grok2api_push_console', '推送 Grok Console', fieldValue(settings, 'grok2api_push_console', g2a.push_console ?? true)),
+  ].join('');
+
+  const renderCpaSection = (settings = {}, cpa = {}) => [
+    '<div class="form-field wide" style="margin-top:6px;border-top:1px solid #eee;padding-top:12px">',
+    '<div style="font-size:12px;font-weight:650;color:#333">CPA auth 导出</div>',
+    '<div style="font-size:11px;color:#9a9a9a;margin-top:4px">注册成功后把 sso 换成 cli-proxy-api 可导入的 xai auth json，写入任务目录并打包。关闭后仅采集 sso，不做 CPA 换取。</div>',
+    '</div>',
+    checkboxField('cpa_enabled', '启用 CPA 导出', fieldValue(settings, 'cpa_enabled', cpa.enabled ?? true)),
   ].join('');
 
   const renderCreateForm = () => {
@@ -237,6 +247,7 @@
     'grok2api_push_build',
     'grok2api_push_web',
     'grok2api_push_console',
+    'cpa_enabled',
   ]);
 
   const formPayload = (form, includeEmpty = true) => {
@@ -251,7 +262,7 @@
     if (form.elements.count) payload.count = Math.max(1, Number(payload.count || 1));
     payload.api_append = Boolean(form.elements.api_append?.checked);
     if (form.id === 'register-settings-form') {
-      for (const key of ['grok2api_enabled', 'grok2api_push_build', 'grok2api_push_web', 'grok2api_push_console']) {
+      for (const key of ['grok2api_enabled', 'grok2api_push_build', 'grok2api_push_web', 'grok2api_push_console', 'cpa_enabled']) {
         payload[key] = Boolean(form.elements[key]?.checked);
       }
     }

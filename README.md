@@ -104,6 +104,9 @@ docker load -i grok-helper-latest-docker-image.tar
 - 若设置了 `GROK_REGISTER_CPA_AUTH_DIR`，再写一份到该目录（供 CPA 直接识别）；
 - 任务结束时把该任务的所有 json 打包成 `cpa_xai_auth_import.tar.gz`，方便下载/迁移。
 
+CPA 导出开关也可在控制台「默认设置」里勾选「启用 CPA 导出」，该设置项优先于环境变量
+`GROK_REGISTER_CPA_EXPORT_ENABLED`（config.json 的 `cpa.enabled` 存在时以其为准）。
+
 要让 CPA 自动识别，在 `docker-compose.yml` 里放开 CPA auth 目录挂载并设置环境变量：
 
 ```yaml

@@ -1100,6 +1100,22 @@ def _load_config_request_proxy() -> str:
         return ""
 
 
+def _cpa_export_enabled() -> bool:
+    # CPA 导出开关：优先读 config.json 的 cpa.enabled（控制台设置项），
+    # 未配置该段时回退到环境变量 GROK_REGISTER_CPA_EXPORT_ENABLED（默认 true）。
+    try:
+        import json as _json
+        cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = _json.load(f)
+        cpa_conf = cfg.get("cpa")
+        if isinstance(cpa_conf, dict) and "enabled" in cpa_conf:
+            return bool(cpa_conf.get("enabled"))
+    except Exception:
+        pass
+    return os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def export_cpa_auth(sso_value, email, output_path):
     # 注册成功后，把 sso 换成 CPA 的 xai auth json。
     # 换取一次 token，写到任务本地目录（sso/cpa_auths）以及可选的 CPA 运行目录。
@@ -1107,8 +1123,10 @@ def export_cpa_auth(sso_value, email, output_path):
     #
     # 返回本次换取到的 OAuth token dict（含 grok-cli:access 权限校验通过），供调用方
     # 复用推送到 grok2api 的 Grok Build 池，避免二次换取；无权限 / 失败时返回 None。
-    enabled = os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
-    if not enabled:
+    #
+    # 开关优先级：config.json 的 cpa.enabled（控制台设置项）> 环境变量
+    # GROK_REGISTER_CPA_EXPORT_ENABLED（默认 true）。
+    if not _cpa_export_enabled():
         return None
 
     try:

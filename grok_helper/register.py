@@ -101,6 +101,8 @@ class SystemSettings(BaseModel):
     grok2api_push_build: bool = True
     grok2api_push_web: bool = True
     grok2api_push_console: bool = True
+    # CPA（cli-proxy-api）xai auth 导出开关
+    cpa_enabled: bool = True
 
 
 @dataclass
@@ -287,6 +289,14 @@ def load_source_defaults() -> dict[str, Any]:
             g2a[key] = value.strip().lower() in {"1", "true", "yes", "on"}
     if g2a:
         base["grok2api"] = g2a
+
+    # CPA（cli-proxy-api）xai auth 导出开关，允许通过环境变量预置。
+    cpa = dict(base.get("cpa") or {})
+    cpa_enabled_env = os.getenv("GROK_REGISTER_CPA_EXPORT_ENABLED")
+    if cpa_enabled_env is not None:
+        cpa["enabled"] = cpa_enabled_env.strip().lower() in {"1", "true", "yes", "on"}
+    if cpa:
+        base["cpa"] = cpa
     return base
 
 
@@ -383,6 +393,13 @@ def merged_defaults() -> dict[str, Any]:
     if "grok2api_push_console" in saved:
         g2a["push_console"] = bool(saved.get("grok2api_push_console", True))
     base["grok2api"] = g2a
+
+    # CPA（cli-proxy-api）auth 导出段：注册成功后把 sso 换成 xai auth json。
+    cpa = dict(base.get("cpa") or {})
+    cpa.setdefault("enabled", True)
+    if "cpa_enabled" in saved:
+        cpa["enabled"] = bool(saved.get("cpa_enabled", True))
+    base["cpa"] = cpa
     return base
 
 
@@ -409,6 +426,8 @@ def build_task_config_from_defaults(defaults: dict[str, Any], payload: TaskCreat
         },
         # grok2api 三池推送为系统级配置，不支持按任务覆盖，直接沿用系统默认值。
         "grok2api": dict(defaults.get("grok2api") or {}),
+        # CPA auth 导出同为系统级配置，不支持按任务覆盖。
+        "cpa": dict(defaults.get("cpa") or {}),
     }
 
 

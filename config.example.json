@@ -23,5 +23,8 @@
         "push_build": true,
         "push_web": true,
         "push_console": true
+    },
+    "cpa": {
+        "enabled": true
     }
 }
