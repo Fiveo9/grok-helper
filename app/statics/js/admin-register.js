@@ -138,6 +138,8 @@
         ['cloudmail', 'cloudmail'],
         ['duckmail', 'duckmail'],
         ['ahem', 'ahem'],
+        ['tempmail_lol', 'tempmail.lol'],
+        ['mailtm', 'mail.tm'],
         ['generic', 'generic'],
       ]),
       inputField('temp_mail_api_base', '邮箱 API', fieldValue(settings, 'temp_mail_api_base', currentDefaults.temp_mail_api_base), 'https://example.com'),

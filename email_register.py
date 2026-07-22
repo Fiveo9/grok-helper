@@ -84,6 +84,8 @@ TEMP_MAIL_PROVIDER = str(
 
 _temp_email_cache: Dict[str, str] = {}
 _CLOUD_MAIL_TOKEN_PREFIX = "cloudmail:"
+_MAILTM_TOKEN_PREFIX = "mailtm:"
+_TEMPMAIL_LOL_TOKEN_PREFIX = "tempmaillol:"
 _cloud_mail_admin_token = ""
 _cloud_mail_message_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
 _ahem_domains_cache: Dict[str, List[str]] = {}
@@ -128,6 +130,10 @@ def _detect_mail_provider(api_base: str) -> str:
         return "cloudmail"
     if provider == "ahem":
         return "ahem"
+    if provider in {"tempmail_lol", "tempmaillol", "lol"}:
+        return "tempmail_lol"
+    if provider in {"mailtm", "mail_tm", "mailgw", "mail_gw"}:
+        return "mailtm"
     if provider in {"temp_mail", "generic"}:
         return "generic"
 
@@ -136,6 +142,10 @@ def _detect_mail_provider(api_base: str) -> str:
         return "duckmail"
     if any(marker in hostname for marker in ("cloudmail", "cloud-mail", "skymail")):
         return "cloudmail"
+    if "tempmail.lol" in hostname:
+        return "tempmail_lol"
+    if any(marker in hostname for marker in ("mail.tm", "mail.gw")):
+        return "mailtm"
     return "generic"
 
 
@@ -147,6 +157,10 @@ def _provider_label() -> str:
         return "Cloud Mail"
     if provider == "ahem":
         return "AHEM"
+    if provider == "tempmail_lol":
+        return "TempMail.lol"
+    if provider == "mailtm":
+        return "Mail.tm"
     return "Temp Mail"
 
 def _create_session():
@@ -542,12 +556,306 @@ def _create_duckmail_email() -> Tuple[str, str, str]:
     raise Exception(f"创建 DuckMail 邮箱失败，重试后仍冲突: {last_error}")
 
 
+# ============================================================
+# tempmail.lol：免注册匿名临时邮箱，POST 创建返回 {address, token}
+# ============================================================
+
+TEMPMAIL_LOL_API_BASE = "https://api.tempmail.lol"
+
+
+def _tempmail_lol_base() -> str:
+    base = TEMP_MAIL_API_BASE.strip().rstrip("/")
+    if base and "tempmail.lol" in (urlparse(base).hostname or "").lower():
+        return base
+    return TEMPMAIL_LOL_API_BASE
+
+
+def _build_tempmail_lol_token(token: str) -> str:
+    return f"{_TEMPMAIL_LOL_TOKEN_PREFIX}{token}"
+
+
+def _parse_tempmail_lol_token(mail_token: str) -> str:
+    raw = str(mail_token or "").strip()
+    if raw.startswith(_TEMPMAIL_LOL_TOKEN_PREFIX):
+        return raw[len(_TEMPMAIL_LOL_TOKEN_PREFIX):]
+    return raw
+
+
+def _create_tempmail_lol_email() -> Tuple[str, str, str]:
+    api_base = _tempmail_lol_base()
+    session, use_cffi = _create_session()
+    last_error = ""
+
+    for attempt in range(5):
+        res = _do_request(
+            session,
+            use_cffi,
+            "post",
+            f"{api_base}/v2/inbox/create",
+            timeout=20,
+        )
+        body = res.text or ""
+        if res.status_code == 429 or "rate limit" in body.lower():
+            last_error = f"限流: {res.status_code}"
+            time.sleep(5)
+            continue
+
+        try:
+            data = res.json()
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        email = str(data.get("address") or "").strip()
+        token = str(data.get("token") or "").strip()
+        if email and token:
+            print(f"[*] TempMail.lol 临时邮箱创建成功: {email}")
+            return email, "", _build_tempmail_lol_token(token)
+
+        last_error = f"{res.status_code} - {body[:200]}"
+        time.sleep(0.4 * (attempt + 1))
+
+    raise Exception(f"创建 TempMail.lol 邮箱失败: {last_error}")
+
+
+def _fetch_tempmail_lol_emails(mail_token: str) -> List[Dict[str, Any]]:
+    token = _parse_tempmail_lol_token(mail_token)
+    if not token:
+        return []
+    api_base = _tempmail_lol_base()
+    session, use_cffi = _create_session()
+    res = _do_request(
+        session,
+        use_cffi,
+        "get",
+        f"{api_base}/v2/inbox",
+        params={"token": token},
+        timeout=20,
+    )
+    if res.status_code != 200:
+        return []
+    data = res.json()
+    if not isinstance(data, dict):
+        return []
+
+    raw_messages = data.get("emails") or data.get("messages") or []
+    if not isinstance(raw_messages, list):
+        return []
+
+    messages: List[Dict[str, Any]] = []
+    for idx, item in enumerate(raw_messages):
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        # tempmail.lol 的邮件对象没有稳定 id，用序号+主题拼一个去重键。
+        normalized["id"] = str(item.get("id") or f"{idx}:{item.get('subject', '')}:{item.get('date', '')}")
+        messages.append(normalized)
+    return messages
+
+
+def _fetch_tempmail_lol_email_detail(mail_token: str, msg_id: str) -> Optional[Dict[str, Any]]:
+    normalized_id = _normalize_message_id(msg_id)
+    for message in _fetch_tempmail_lol_emails(mail_token):
+        if str(message.get("id") or "") == normalized_id:
+            return message
+    return None
+
+
+# ============================================================
+# mail.tm / mail.gw：同一套 API（Mercure），需先取域名再建账号换 token
+# ============================================================
+
+MAILTM_API_BASES = ["https://api.mail.tm", "https://api.mail.gw"]
+
+
+def _mailtm_bases() -> List[str]:
+    base = TEMP_MAIL_API_BASE.strip().rstrip("/")
+    if base and any(marker in (urlparse(base).hostname or "").lower() for marker in ("mail.tm", "mail.gw")):
+        ordered = [base]
+        ordered.extend(b for b in MAILTM_API_BASES if b != base)
+        return ordered
+    return list(MAILTM_API_BASES)
+
+
+def _build_mailtm_token(base: str, token: str) -> str:
+    payload = json.dumps({"base": base, "token": token}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    return f"{_MAILTM_TOKEN_PREFIX}{encoded}"
+
+
+def _parse_mailtm_token(mail_token: str) -> Tuple[str, str]:
+    raw = str(mail_token or "").strip()
+    if raw.startswith(_MAILTM_TOKEN_PREFIX):
+        encoded = raw[len(_MAILTM_TOKEN_PREFIX):]
+        encoded += "=" * (-len(encoded) % 4)
+        try:
+            data = json.loads(base64.urlsafe_b64decode(encoded.encode("ascii")).decode("utf-8"))
+        except Exception as exc:
+            raise Exception(f"Mail.tm token 解析失败: {exc}")
+        if isinstance(data, dict):
+            base = str(data.get("base") or "").strip()
+            token = str(data.get("token") or "").strip()
+            if base and token:
+                return base, token
+    raise Exception("Mail.tm token 缺少 base/token")
+
+
+def _resolve_mailtm_domains(session, use_cffi, api_base: str) -> List[str]:
+    if TEMP_MAIL_DOMAINS:
+        return list(TEMP_MAIL_DOMAINS)
+
+    res = _do_request(
+        session,
+        use_cffi,
+        "get",
+        f"{api_base}/domains",
+        params={"page": 1},
+        timeout=20,
+    )
+    if res.status_code != 200:
+        raise Exception(f"获取 Mail.tm 域名失败: {res.status_code} - {res.text[:200]}")
+    data = res.json()
+    if not isinstance(data, dict):
+        raise Exception("Mail.tm 域名接口返回格式异常")
+
+    members = data.get("hydra:member") or data.get("data") or []
+    if not isinstance(members, list):
+        raise Exception("Mail.tm 域名列表格式异常")
+
+    domains: List[str] = []
+    for item in members:
+        if not isinstance(item, dict):
+            continue
+        domain = str(item.get("domain") or "").strip()
+        if not domain:
+            continue
+        if item.get("isActive") is False:
+            continue
+        if item.get("isPrivate") is True:
+            continue
+        domains.append(domain)
+    if not domains:
+        raise Exception("Mail.tm 域名列表为空")
+    return domains
+
+
+def _create_mailtm_email() -> Tuple[str, str, str]:
+    session, use_cffi = _create_session()
+    last_error = ""
+
+    for api_base in _mailtm_bases():
+        try:
+            domains = _resolve_mailtm_domains(session, use_cffi, api_base)
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+
+        random.shuffle(domains)
+        for domain in domains[:6]:
+            email_local = _generate_local_part(random.randint(8, 12))
+            email = f"{email_local}@{domain}"
+            password = _generate_mail_password()
+
+            create_res = _do_request(
+                session,
+                use_cffi,
+                "post",
+                f"{api_base}/accounts",
+                json={"address": email, "password": password},
+                timeout=20,
+            )
+            if create_res.status_code not in {200, 201}:
+                last_error = f"{create_res.status_code} - {create_res.text[:200]}"
+                continue
+
+            token_res = _do_request(
+                session,
+                use_cffi,
+                "post",
+                f"{api_base}/token",
+                json={"address": email, "password": password},
+                timeout=20,
+            )
+            if token_res.status_code != 200:
+                last_error = f"token {token_res.status_code} - {token_res.text[:200]}"
+                continue
+
+            token_data = token_res.json()
+            token = str(token_data.get("token") or "").strip() if isinstance(token_data, dict) else ""
+            if not token:
+                last_error = f"token 接口未返回 token: {token_data}"
+                continue
+
+            print(f"[*] Mail.tm 临时邮箱创建成功: {email} ({api_base})")
+            return email, password, _build_mailtm_token(api_base, token)
+
+    raise Exception(f"创建 Mail.tm 邮箱失败: {last_error or '所有 base 均不可用'}")
+
+
+def _fetch_mailtm_emails(mail_token: str) -> List[Dict[str, Any]]:
+    api_base, token = _parse_mailtm_token(mail_token)
+    session, use_cffi = _create_session()
+    res = _do_request(
+        session,
+        use_cffi,
+        "get",
+        f"{api_base}/messages",
+        params={"page": 1},
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=20,
+    )
+    if res.status_code != 200:
+        return []
+    data = res.json()
+    if not isinstance(data, dict):
+        return []
+
+    members = data.get("hydra:member") or data.get("data") or []
+    if not isinstance(members, list):
+        return []
+
+    messages: List[Dict[str, Any]] = []
+    for item in members:
+        if not isinstance(item, dict):
+            continue
+        msg_id = item.get("id")
+        if msg_id is None:
+            continue
+        normalized = dict(item)
+        normalized["id"] = str(msg_id)
+        messages.append(normalized)
+    return messages
+
+
+def _fetch_mailtm_email_detail(mail_token: str, msg_id: str) -> Optional[Dict[str, Any]]:
+    api_base, token = _parse_mailtm_token(mail_token)
+    normalized_id = _normalize_message_id(msg_id)
+    session, use_cffi = _create_session()
+    res = _do_request(
+        session,
+        use_cffi,
+        "get",
+        f"{api_base}/messages/{normalized_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=20,
+    )
+    if res.status_code != 200:
+        return None
+    data = res.json()
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 def create_temp_email() -> Tuple[str, str, str]:
     """创建临时邮箱地址，返回 (email, password, mail_token)。"""
-    if not TEMP_MAIL_API_BASE:
+    provider = _detect_mail_provider(TEMP_MAIL_API_BASE)
+    # tempmail.lol / mail.tm 有内置公共端点，未配置 temp_mail_api_base 也能用；
+    # 其余 provider 仍要求显式配置 API 地址。
+    if provider not in {"tempmail_lol", "mailtm"} and not TEMP_MAIL_API_BASE:
         raise Exception("temp_mail_api_base 未设置，无法创建临时邮箱")
 
-    provider = _detect_mail_provider(TEMP_MAIL_API_BASE)
     if provider == "duckmail":
         try:
             return _create_duckmail_email()
@@ -563,6 +871,16 @@ def create_temp_email() -> Tuple[str, str, str]:
             return _create_ahem_email()
         except Exception as e:
             raise Exception(f"AHEM 临时邮箱创建失败: {e}")
+    if provider == "tempmail_lol":
+        try:
+            return _create_tempmail_lol_email()
+        except Exception as e:
+            raise Exception(f"TempMail.lol 临时邮箱创建失败: {e}")
+    if provider == "mailtm":
+        try:
+            return _create_mailtm_email()
+        except Exception as e:
+            raise Exception(f"Mail.tm 临时邮箱创建失败: {e}")
 
     if not TEMP_MAIL_ADMIN_PASSWORD:
         raise Exception("temp_mail_admin_password 未设置，无法创建临时邮箱")
@@ -748,6 +1066,16 @@ def fetch_emails(mail_token: str) -> List[Dict[str, Any]]:
             return _fetch_ahem_emails(mail_token)
         except Exception:
             return []
+    if provider == "tempmail_lol":
+        try:
+            return _fetch_tempmail_lol_emails(mail_token)
+        except Exception:
+            return []
+    if provider == "mailtm":
+        try:
+            return _fetch_mailtm_emails(mail_token)
+        except Exception:
+            return []
 
     try:
         api_base = TEMP_MAIL_API_BASE.rstrip("/")
@@ -865,6 +1193,16 @@ def fetch_email_detail(mail_token: str, msg_id: str) -> Optional[Dict[str, Any]]
     if provider == "ahem":
         try:
             return _fetch_ahem_email_detail(mail_token, msg_id)
+        except Exception:
+            return None
+    if provider == "tempmail_lol":
+        try:
+            return _fetch_tempmail_lol_email_detail(mail_token, msg_id)
+        except Exception:
+            return None
+    if provider == "mailtm":
+        try:
+            return _fetch_mailtm_email_detail(mail_token, msg_id)
         except Exception:
             return None
 
