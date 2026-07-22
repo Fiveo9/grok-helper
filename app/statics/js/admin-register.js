@@ -150,6 +150,7 @@
       inputField('api_endpoint', 'Token Sink', fieldValue(settings, 'api_endpoint', apiDefaults.endpoint), 'http://127.0.0.1:8000/admin/api/tokens', 'text', true),
       inputField('api_token', 'Token Sink Key', '', '已有值则留空不修改', 'password'),
       checkboxField('api_append', '追加写入 token', fieldValue(settings, 'api_append', apiDefaults.append ?? true)),
+      inputField('otp_wait_timeout', '验证码等信超时（秒）', fieldValue(settings, 'otp_wait_timeout', currentDefaults.otp_wait_timeout ?? 90), '30-600，默认 90', 'number'),
       renderGrok2apiSection(settings, g2aDefaults),
       renderCpaSection(settings, cpaDefaults),
       '<div class="form-field wide"><button type="submit" class="page-action-btn page-action-btn-primary">保存默认设置</button></div>',
@@ -267,6 +268,8 @@
       for (const key of ['grok2api_enabled', 'grok2api_push_build', 'grok2api_push_web', 'grok2api_push_console', 'cpa_enabled']) {
         payload[key] = Boolean(form.elements[key]?.checked);
       }
+      const otpWait = Math.round(Number(payload.otp_wait_timeout || 90));
+      payload.otp_wait_timeout = Math.max(30, Math.min(600, Number.isFinite(otpWait) ? otpWait : 90));
     }
     if (form.id === 'register-settings-form') {
       const provider = String(payload.temp_mail_provider || '').trim().toLowerCase();

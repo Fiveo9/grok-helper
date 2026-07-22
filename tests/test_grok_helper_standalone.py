@@ -130,6 +130,49 @@ class StandaloneRegisterServiceTests(unittest.TestCase):
         self.assertEqual(defaults["api"]["endpoint"], "http://sink.example/admin/api/tokens")
         self.assertTrue(defaults["api"]["append"])
 
+    def test_otp_wait_timeout_defaults_env_override_and_clamp(self):
+        register = import_fresh_register()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            (source / "config.json").write_text(
+                json.dumps({"run": {"count": 1}, "otp_wait_timeout": 120}),
+                encoding="utf-8",
+            )
+            # config.json value is honored when no env override is present.
+            with (
+                patch.object(register, "SOURCE_PROJECT", source),
+                patch.dict(os.environ, {}, clear=True),
+            ):
+                self.assertEqual(register.load_source_defaults()["otp_wait_timeout"], 120)
+                self.assertEqual(register.merged_defaults()["otp_wait_timeout"], 120)
+
+            # Env override wins and is clamped into the 30-600 range.
+            with (
+                patch.object(register, "SOURCE_PROJECT", source),
+                patch.dict(
+                    os.environ,
+                    {"GROK_REGISTER_DEFAULT_OTP_WAIT_TIMEOUT": "9000"},
+                    clear=True,
+                ),
+            ):
+                self.assertEqual(register.load_source_defaults()["otp_wait_timeout"], 600)
+
+    def test_otp_wait_timeout_falls_back_to_default_when_absent(self):
+        register = import_fresh_register()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            (source / "config.json").write_text(
+                json.dumps({"run": {"count": 1}}),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(register, "SOURCE_PROJECT", source),
+                patch.dict(os.environ, {}, clear=True),
+            ):
+                self.assertEqual(register.merged_defaults()["otp_wait_timeout"], 90)
+
     def test_parse_console_state_uses_file_mtime_for_last_log_at(self):
         register = import_fresh_register()
 

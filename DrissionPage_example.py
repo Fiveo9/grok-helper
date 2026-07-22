@@ -415,7 +415,8 @@ return true;
 
 def fill_code_and_submit(email, dev_token, timeout=60):
     # 复用 `email_register.py` 里的验证码轮询逻辑，等待邮件到达后自动填写 OTP。
-    code = get_oai_code(dev_token, email)
+    # 等信超时由 config.json 的 otp_wait_timeout 控制（控制台设置项），缺省 90 秒。
+    code = get_oai_code(dev_token, email, timeout=load_otp_wait_timeout())
     if not code:
         raise Exception("获取验证码失败")
 
@@ -1370,6 +1371,21 @@ def load_run_count() -> int:
     except Exception:
         pass
     return 10
+
+
+def load_otp_wait_timeout() -> int:
+    # 从 config.json 读取验证码等信超时（秒），限制在 30-600，配置缺失时返回 90。
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        import json
+        with open(config_path, "r", encoding="utf-8") as f:
+            conf = json.load(f)
+        v = conf.get("otp_wait_timeout")
+        if isinstance(v, int):
+            return max(30, min(600, v))
+    except Exception:
+        pass
+    return 90
 
 
 def resolve_attempt_cap(target_count: int) -> int:

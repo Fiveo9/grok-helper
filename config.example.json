@@ -2,6 +2,7 @@
     "run": {
         "count": 50
     },
+    "otp_wait_timeout": 90,
     "temp_mail_provider": "",
     "temp_mail_api_base": "https://mail-api.example.com",
     "temp_mail_admin_email": "",

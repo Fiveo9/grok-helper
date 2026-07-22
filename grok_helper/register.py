@@ -93,6 +93,8 @@ class SystemSettings(BaseModel):
     api_endpoint: str = ""
     api_token: str = ""
     api_append: bool = True
+    # 验证码等信超时（秒）：注册流程轮询临时邮箱等待 OTP 的最长时间
+    otp_wait_timeout: int = Field(90, ge=30, le=600)
     # grok2api（chenyme/grok2api，Go 版）三池推送
     grok2api_enabled: bool = False
     grok2api_base_url: str = ""
@@ -237,6 +239,13 @@ def load_source_defaults() -> dict[str, Any]:
     if env_count:
         try:
             base.setdefault("run", {})["count"] = max(1, int(env_count))
+        except ValueError:
+            pass
+
+    env_otp_wait = os.getenv("GROK_REGISTER_DEFAULT_OTP_WAIT_TIMEOUT", "").strip()
+    if env_otp_wait:
+        try:
+            base["otp_wait_timeout"] = max(30, min(600, int(env_otp_wait)))
         except ValueError:
             pass
 
@@ -400,6 +409,17 @@ def merged_defaults() -> dict[str, Any]:
     if "cpa_enabled" in saved:
         cpa["enabled"] = bool(saved.get("cpa_enabled", True))
     base["cpa"] = cpa
+
+    # 验证码等信超时（秒）：控制注册脚本轮询临时邮箱等待 OTP 的最长时间。
+    otp_wait = base.get("otp_wait_timeout")
+    if not isinstance(otp_wait, int):
+        otp_wait = 90
+    if "otp_wait_timeout" in saved:
+        try:
+            otp_wait = int(saved.get("otp_wait_timeout", 90))
+        except (TypeError, ValueError):
+            otp_wait = 90
+    base["otp_wait_timeout"] = max(30, min(600, otp_wait))
     return base
 
 
@@ -428,6 +448,8 @@ def build_task_config_from_defaults(defaults: dict[str, Any], payload: TaskCreat
         "grok2api": dict(defaults.get("grok2api") or {}),
         # CPA auth 导出同为系统级配置，不支持按任务覆盖。
         "cpa": dict(defaults.get("cpa") or {}),
+        # 验证码等信超时（秒）为系统级配置，不支持按任务覆盖。
+        "otp_wait_timeout": int(defaults.get("otp_wait_timeout", 90)),
     }
 
 
